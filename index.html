@@ -49,6 +49,13 @@
     <script type="text/javascript" src="./node_modules/socket.io-client/dist/socket.io.js"></script>
     <script type="text/javascript" src="./lib.js"></script>
     <script type="text/javascript">
+
+        if (isElectron) {
+            // Import the HulaLoop C++ addon module
+            const hulaloop = require('bindings')('hulaloop-node');
+            console.dir(hulaloop);
+        }
+
         let socket = new Socket('symboxtra.dynu.net', 8080);
 
         document.getElementById('connectButton').addEventListener('click', async () => {
