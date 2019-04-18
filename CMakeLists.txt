@@ -1,4 +1,8 @@
+cmake_minimum_required(VERSION 3.5)
+
 project (hulaloop-node)
+
+add_definitions ("-std=c++11")
 
 include_directories (${CMAKE_JS_INC})
 file (GLOB SOURCE_FILES ${PROJECT_SOURCE_DIR}/cpp/*.cpp)
