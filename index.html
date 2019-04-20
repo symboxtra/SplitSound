@@ -115,7 +115,7 @@
 
             switch (source) {
                 case 'file':
-                    await setupLocalMediaStreamsFromFile('./test_fileL.mp3');
+                    await setupLocalMediaStreamsFromFile('./test_file_left_panned_sweep.mp3');
                     break;
                 case 'mic':
                     // Disable the constraints that exclude microphone
@@ -131,9 +131,12 @@
                 case 'desktop':
                     await setupLocalMediaStreams();
                     break;
+                case 'hulaloop':
+                    // TODO: move hula init to lib.js
+                    break;
                 case 'none':
                 default:
-                    // receiverOnly = true;
+                    receiverOnly = true;
                     break;
             }
 
