@@ -52,7 +52,6 @@
 
         if (isElectron) {
             // Import the HulaLoop C++ addon module
-            const streamWorker = require('streaming-worker');
             const hulaloopAddon = require('bindings')('hulaloop-node.node');
             console.dir(hulaloopAddon);
 

@@ -15,8 +15,6 @@
     "cmake-js": "^5.2.0",
     "nan": "^2.13.2",
     "socket.io": "^2.2.0",
-    "streaming-worker": "^1.0.1",
-    "streaming-worker-sdk": "^0.9.3",
     "webrtc-adapter": "^7.2.3"
   },
   "devDependencies": {
