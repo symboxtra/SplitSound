@@ -46,7 +46,6 @@ const offerOptions = {
 window.AudioContext = (window.AudioContext || window.webkitAudioContext);
 let context = new AudioContext();
 let localStreamNode;
-let incomingRemoteStreamNode;
 let outgoingRemoteStreamNode = context.createMediaStreamDestination();
 let incomingRemoteGainNode = context.createGain();
 let outgoingRemoteGainNode = context.createGain();
@@ -113,6 +112,24 @@ if (isElectron === false) {
 
 const servers = null;  // Allows for RTC server configuration.
 let videoStream = null;
+let mediaSource = new MediaSource();
+let mediaBuffer = null;
+console.dir(mediaSource);
+
+// TODO: Delete. This doesn't seem like the way to go
+let mediaSourceAudio = new Audio();
+mediaSourceAudio.autoplay = true;
+mediaSourceAudio.controls = true;
+mediaSourceAudio.src = URL.createObjectURL(mediaSource);
+mediaSourceAudio.load();
+remoteMedia.appendChild(mediaSourceAudio);
+
+// Can't call addSourceBuffer until it's open
+mediaSource.addEventListener('sourceopen', async () => {
+    trace('MediaSource open.');
+    trace('Adding buffer to MediaSource.');
+    mediaBuffer = mediaSource.addSourceBuffer('audio/mpeg');
+});
 
 
 
@@ -163,13 +180,12 @@ async function setupLocalMediaStreamsFromFile(filepath) {
         // Create media source
         // This is attached to the HTML audio element and can be fed arbitrary buffers of audio
         // TODO: Make sure we can support MIME other than audio/mpeg
-        let mediaSource = new MediaSource();
-        trace('Created MediaSource.');
-        console.dir(mediaSource);
+        let fileMediaSource = new MediaSource();
+        trace('Created FileMediaSource.');
 
         // Can't call addSourceBuffer until it's open
-        mediaSource.addEventListener('sourceopen', async () => {
-            trace('MediaSource open.');
+        fileMediaSource.addEventListener('sourceopen', async () => {
+            trace('FileMediaSource open.');
 
             // Corner case for file:// protocol since fetch won't like it
             if (isElectron === false && location.href.includes('file://')) {
@@ -177,7 +193,7 @@ async function setupLocalMediaStreamsFromFile(filepath) {
                 // URL.revokeObjectURL(localAudio.src);
                 // localAudio.src = './test_file.mp3';
             } else {
-                let buffer = mediaSource.addSourceBuffer('audio/mpeg');
+                let buffer = fileMediaSource.addSourceBuffer('audio/mpeg');
 
                 trace('Fetching data...');
                 let data;
@@ -212,7 +228,7 @@ async function setupLocalMediaStreamsFromFile(filepath) {
         localMedia.appendChild(localAudio);
 
         // srcObject doesn't work here ?
-        localAudio.src = URL.createObjectURL(mediaSource);
+        localAudio.src = URL.createObjectURL(fileMediaSource);
         localAudio.load();
     });
 }
@@ -229,6 +245,8 @@ function gotLocalMediaStream(mediaStream) {
     if (localStreamNode) {
         localStreamNode.disconnect();
     }
+
+    console.dir(mediaStream);
 
     localStreamNode = context.createMediaStreamSource(mediaStream);
     localStreamNode.connect(outgoingRemoteGainNode);
@@ -374,9 +392,17 @@ class Peer {
     }
 
     disconnect() {
-        this.conn.close();
-        this.sendChannel.close();
-        this.recvChannel.close();
+        if (this.conn) {
+            this.conn.close();
+        }
+
+        if (this.sendChannel) {
+            this.sendChannel.close();
+        }
+
+        if (this.recvChannel) {
+            this.recvChannel.close();
+        }
 
         this.cleanup();
 
@@ -456,6 +482,9 @@ class Peer {
 
             this.audioNode = context.createMediaStreamSource(this.remoteStream);
             this.audioNode.connect(this.gainNode);
+
+            console.dir(this.remoteStream);
+            console.dir(this.audioNode);
 
             // Setup mute button logic
             this.muteButton = document.createElement('button');

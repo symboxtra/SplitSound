@@ -52,8 +52,58 @@
 
         if (isElectron) {
             // Import the HulaLoop C++ addon module
-            const hulaloop = require('bindings')('hulaloop-node');
+            const streamWorker = require('streaming-worker');
+            const hulaloopAddon = require('bindings')('hulaloop-node.node');
+            console.dir(hulaloopAddon);
+
+            let bufferFrames = 1024;
+            let channels = 2;
+            let sampleSize = 4;
+            let procNode = context.createScriptProcessor(bufferFrames, channels, channels);
+
+            const hulaloop = new hulaloopAddon.HulaLoop(
+                (event, data) => {
+                    // TODO: Attach event emitter
+                    console.log(`Event: ${event} -- Data: ${data}`);
+                },
+                (errorMsg) => {
+                    console.log(errorMsg);
+                },
+                {
+                    input: "test"
+                }
+            );
             console.dir(hulaloop);
+            console.log(context.sampleRate);
+
+            let hulaloopRawBuffer = new ArrayBuffer(bufferFrames * channels * sampleSize);
+            let hulaloopBuffer = new Float32Array(hulaloopRawBuffer);
+            console.log(hulaloopBuffer);
+
+            procNode.onaudioprocess = (e) => {
+                let outputBuffer = e.outputBuffer;
+
+                // Get our data
+                hulaloop.readBuffer(hulaloopRawBuffer);
+
+                // Assume stereo for now
+                let outputDataL = outputBuffer.getChannelData(0);
+                let outputDataR = outputBuffer.getChannelData(1);
+
+                // Loop over our data and convert from interleaved to planar
+                for (let i = 0; i < hulaloopBuffer.length; i += 2) {
+                    outputDataL[i] = hulaloopBuffer[i];
+                    outputDataR[i] = hulaloopBuffer[i + 1];
+                }
+            };
+
+            procNode.connect(outgoingRemoteGainNode);
+            hulaloop.startCapture();
+
+            // setInterval(() => {
+            //     hulaloop.readBuffer(hulaloopRawBuffer);
+            //     console.log(hulaloopBuffer);
+            // }, 30);
         }
 
         let socket = new Socket('symboxtra.dynu.net', 8080);
@@ -66,7 +116,7 @@
 
             switch (source) {
                 case 'file':
-                    await setupLocalMediaStreamsFromFile('./test_file.mp3');
+                    await setupLocalMediaStreamsFromFile('./test_fileL.mp3');
                     break;
                 case 'mic':
                     // Disable the constraints that exclude microphone
@@ -84,7 +134,7 @@
                     break;
                 case 'none':
                 default:
-                    receiverOnly = true;
+                    // receiverOnly = true;
                     break;
             }
 
