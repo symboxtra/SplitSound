@@ -36,11 +36,16 @@ const mediaStreamConstraints = {
 // Receiver only will work fine either way
 //mediaStreamConstraints.audio = false;
 
-// Set up to exchange audio/video
+// Set up RTCPeer offer options
 const offerOptions = {
-    offerToReceiveAudio: 1,
-    offerToReceiveVideo: (showVideo) ? 1 : 0
+    voiceActivityDetection: true
 };
+
+// Set up RTCPeerConnection options
+const rtcConfig = {
+    sdpSemantics: 'unified-plan'
+};
+
 
 // Setup Web Audio components
 window.AudioContext = (window.AudioContext || window.webkitAudioContext);
@@ -110,7 +115,6 @@ if (isElectron === false) {
     document.getElementById('fromDesktop').remove();
 }
 
-const servers = null;  // Allows for RTC server configuration.
 let videoStream = null;
 let mediaSource = new MediaSource();
 let mediaBuffer = null;
@@ -324,8 +328,20 @@ class Peer {
         this.gainNode = null;
         this.muteButton = null;
 
-        this.conn = new RTCPeerConnection(servers, {  });
+        this.conn = new RTCPeerConnection(rtcConfig);
         trace('Created local peer connection object localPeerConnection.');
+
+        // Default to send & receive unless we know we're receiver only
+        let direction = 'sendrecv';
+        if (receiverOnly) {
+            direction = 'recvonly';
+        }
+
+        // Add transceivers
+        this.conn.addTransceiver('audio', { direction: direction });
+        if (showVideo) {
+            this.conn.addTransceiver('video', { direction: direction });
+        }
 
         // Use arrow function so that 'this' is available in class methods
         this.conn.addEventListener('icecandidate', (event) => {
