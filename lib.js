@@ -327,7 +327,7 @@ class Peer {
         this.muteButton = null;
 
         this.conn = new RTCPeerConnection(rtcConfig);
-        trace('Created local peer connection object localPeerConnection.');
+        trace(`Created peer connection object for ${this.id}.`);
 
         // TODO: Figure out bidirectional issues
         // Default to send & receive unless we know we're receiver only
@@ -590,32 +590,53 @@ async function createPeer(id, socket) {
 }
 
 /**
- * Modify the offer/answer Session Description Protocol object
+ * Munge the offer/answer Session Description Protocol object
  * to enforce the codecs/options we want.
  */
 function transformSdp(sdp) {
-    console.log(sdp);
+    trace(`sdp: transformSdp begin`);
 
-    let opusId = 111; // Default to what WebRTC was sending as of April 2019
+    /**
+     * Parse the codec id.
+     */
+    function getCodecId(haystack) {
+        let matches = haystack.match(/:\d{1,3}/); // Match :XXX id
+        if (matches) {
+            return matches[0].substring(1);
+        }
+        return null;
+    }
+
+    let codecLineNumber = -1;
+    let codecIdsToRemove = [];
+    let opusCodecId = 111; // Default to what Chrome was sending as of April 2019
     let lines = sdp.split('\r\n');
 
     for (let i = 0; i < lines.length; i++) {
         let line = lines[i];
 
+        if (line.includes('m=audio')) {
+            codecLineNumber = i;
+        }
+
         // rtpmap
         if (line.includes('rtpmap:')) {
             // Remove any rtpmap that isn't opus
             if (!line.includes('opus')) {
-                trace(`sdp: Removed ${lines.splice(i, 1)}`);
+                let codecId = getCodecId(line);
+                if (codecId !== null) {
+                    codecIdsToRemove.push(codecId);
+                }
+
+                lines.splice(i, 1);
                 i--;
+
+                trace(`sdp: Removed ${line}`);
                 continue;
             }
 
             let parts = line.split('=');
-            let matches = parts[1].match(':\\d{1, 3}'); // Match :XXX id
-            if (matches) {
-                opusId = matches[0].substring(1);
-            }
+            opusCodecId = getCodecId(parts[1]) || opusCodecId;
 
             // Make sure we get the trailing /2 for stereo
             let parts2 = parts[1].split('/');
@@ -627,32 +648,66 @@ function transformSdp(sdp) {
         }
 
         // fmtp settings
-        if (line.includes(`fmtp:${opusId}`)) {
+        if (line.includes(`fmtp:${opusCodecId}`)) {
             let parts = line.split(' ');
             let parts2 = parts[1].split(';');
 
             let key = 'stereo=1';
             if (!parts[1].includes(key)) {
                 parts2.push(key);
-                trace(`stp: Added fmtp value ${key}`);
+                trace(`sdp: Added fmtp value ${key}`);
             }
 
             key = 'sprop-stereo=1';
             if (!parts[1].includes(key)) {
                 parts2.push(key);
-                trace(`stp: Added fmtp value ${key}`);
+                trace(`sdp: Added fmtp value ${key}`);
             }
 
             parts[1] = parts2.join(';');
             lines[i] = parts.join(' ');
+
+        } else if (line.includes(`fmtp:`)) {
+            // Remove extra fmtp info
+            let codecId = getCodecId(line);
+            if (codecIdsToRemove.includes(codecId)) {
+                lines.splice(i, 1);
+                i--;
+                trace(`Removed fmtp line for ${codecId}.`);
+            }
         }
 
         // bandwidth
         // set to 128kbps for now
         if (line.includes(`b=AS:`)) {
-            lines[i] = "b=AS:128";
+            let newBitrate = "b=AS:128";
+            lines[i] = newBitrate;
+            trace(`sdp: Updated bitrate to ${newBitrate}.`);
         }
     }
+
+    // Strip codec ids from the m= line
+    if (codecLineNumber !== -1) {
+        let parts = lines[codecLineNumber].split(' ');
+
+        // Skip past m=audio PORT so that we don't accidentally replace port
+        for (let i = 2; i < parts.length; i++) {
+            if (codecIdsToRemove.includes(parts[i])) {
+                let id = parts.splice(i, 1);
+                i--;
+            }
+        }
+
+        lines[codecLineNumber] = parts.join(' ');
+        trace(`sdp: Result from remove codec ids: ${lines[codecLineNumber]}`);
+    }
+
+    if (false) {
+        console.log(sdp);
+        console.log(lines.join('\r\n'));
+    }
+
+    trace(`sdp: transformSdp end`);
 
     return lines.join('\r\n');
 }
@@ -722,7 +777,6 @@ class Socket {
             offer.sdp = transformSdp(offer.sdp);
             await peer.conn.setLocalDescription(offer);
 
-            console.log(peer);
             this.socket.emit('offer', offer, peer.id);
         });
 
@@ -742,6 +796,9 @@ class Socket {
             }
 
             peer.answered = true;
+
+            trace(`Incoming offer sdp:`);
+            console.log(offer.sdp);
 
             await peer.conn.setRemoteDescription(offer);
             let answer = await peer.conn.createAnswer(offerOptions);
