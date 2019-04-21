@@ -586,6 +586,74 @@ async function createPeer(id, socket) {
     return peer;
 }
 
+/**
+ * Modify the offer/answer Session Description Protocol object
+ * to enforce the codecs/options we want.
+ */
+transformSdp(null);
+async function transformSdp(sdp) {
+    // Create mock peer to test
+    let peer = await createPeer('test', { socket: { socket: { emit: (e) => {} }}});
+    let offer = await peer.conn.createOffer(offerOptions);
+    console.dir(offer);
+
+    sdp = offer.sdp;
+    let opusId = 111; // Default to what WebRTC was sending as of April 2019
+
+    let lines = sdp.split('\r\n');
+
+    for (let i = 0; i < lines.length; i++) {
+        let line = lines[i];
+
+        // rtpmap
+        if (line.includes('rtpmap:')) {
+            // Remove any rtpmap that isn't opus
+            if (!line.includes('opus')) {
+                trace(`sdp: Removed ${lines.splice(i, 1)}`);
+                i--;
+                continue;
+            }
+
+            let parts = line.split('=');
+            let matches = parts[1].match(':\\d{1, 3}'); // Match :XXX id
+            if (matches) {
+                opusId = matches[0].substring(1);
+            }
+
+            // Make sure we get the trailing /2 for stereo
+            let parts2 = parts[1].split('/');
+            if (!parts2.includes('2')) {
+                parts2.push('2');
+            }
+            parts[1] = parts2.join('/');
+            lines[i] = parts.join('=');
+        }
+
+        // fmtp settings
+        if (line.includes(`fmtp:${opusId}`)) {
+            let parts = line.split(' ');
+            let parts2 = parts[1].split(';');
+
+            let key = 'stereo=1';
+            if (!parts[1].includes(key)) {
+                parts2.push(key);
+                trace(`stp: Added fmtp value ${key}`);
+            }
+
+            key = 'sprop-stereo=1';
+            if (!parts[1].includes(key)) {
+                parts2.push(key);
+                trace(`stp: Added fmtp value ${key}`);
+            }
+
+            parts[1] = parts2.join(';');
+            lines[i] = parts.join(' ');
+        }
+    }
+
+    sdp = lines.join('\r\n');
+}
+
 
 /**************************************************
  * Socket.io signaling                            *
