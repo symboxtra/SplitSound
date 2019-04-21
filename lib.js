@@ -94,6 +94,10 @@ visualizerCanvas.addEventListener('dblclick', () => {
 // Define media elements.
 const localMedia = document.getElementById('localMedia');
 const localVideo = document.getElementById('localVideo');
+const localAudio = document.getElementById('localAudio');
+
+let localAudioElementNode = context.createMediaElementSource(localAudio);
+localAudioElementNode.connect(outgoingRemoteGainNode);
 
 // Container for remote media elements
 const remoteMedia = document.getElementById('remoteMedia');
@@ -138,7 +142,7 @@ async function setupLocalMediaStreams() {
             // We weren't able to get a local media stream
             // Become a receiver
             enableReceiverOnly();
-            reject();
+            reject(e);
         });
     });
 }
@@ -165,14 +169,8 @@ async function setupLocalMediaStreamsFromFile(filepath) {
         }
 
         // Attach file to audio element
-        let localAudio = new Audio();
         localAudio.src = filepath;
-        localAudio.autoplay = true;
-        localAudio.controls = true;
-        localMedia.appendChild(localAudio);
-
-        let localAudioNode = context.createMediaElementSource(localAudio);
-        localAudioNode.connect(outgoingRemoteGainNode);
+        localAudio.classList.remove('hidden');
 
         resolve();
     });
@@ -210,6 +208,7 @@ function setupLocalMediaStreamFromHulaLoop() {
     let hulaloopRawBuffer = new ArrayBuffer(bufferFrames * channels * sampleSize);
     let hulaloopBuffer = new Float32Array(hulaloopRawBuffer);
     console.log(hulaloopBuffer);
+    console.log(hulaloopBuffer.length);
 
     procNode.onaudioprocess = (e) => {
         let outputBuffer = e.outputBuffer;
@@ -220,6 +219,8 @@ function setupLocalMediaStreamFromHulaLoop() {
         // Assume stereo for now
         let outputDataL = outputBuffer.getChannelData(0);
         let outputDataR = outputBuffer.getChannelData(1);
+
+        // console.log(`${outputDataL.length}     ${outputDataR.length}`);
 
         // Loop over our data and convert from interleaved to planar
         for (let i = 0; i < hulaloopBuffer.length; i += 2) {
@@ -406,6 +407,11 @@ class Peer {
     }
 
     disconnect() {
+        if (this.disconnecting) {
+            return;
+        }
+        this.disconnecting = true;
+
         if (this.conn) {
             this.conn.close();
         }
@@ -437,7 +443,9 @@ class Peer {
     handleConnectionChange(event) {
         trace(`ICE state changed to: ${event.target.iceConnectionState}.`);
 
-        if (event.target.iceConnectionState === 'disconnected') { // || event.target.iceConnectionState === 'closed' || event.target.iceConnectionState === 'failed') {
+        if (event.target.iceConnectionState === 'disconnected' ||
+            event.target.iceConnectionState === 'closed' ||
+            event.target.iceConnectionState === 'failed') {
             this.disconnect();
         }
     }

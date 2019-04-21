@@ -22,8 +22,8 @@
                     <option value="none">None</option>
                     <option value="file">File</option>
                     <option value="mic">Microphone</option>
-                    <option class="electronOnly" value="desktop">Desktop Capture (Windows only)</option>
                     <option class="electronOnly" value="hulaloop">HulaLoop</option>
+                    <option class="electronOnly" value="desktop">Desktop Capture (Windows only)</option>
                 </select>
             </div>
         </div>
@@ -37,6 +37,7 @@
     <h3>ID: <span id="socketId">disconnected</span></h3>
     <div id="localMedia">
         <video id="localVideo" class="localVideo" autoplay controls muted></video>
+        <audio id="localAudio" class="hidden" autoplay controls></audio>
     </div>
     <select id="vizualizerOptions">
         <option value="line">Line</option>
