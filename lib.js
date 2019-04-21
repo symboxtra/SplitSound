@@ -590,16 +590,8 @@ async function createPeer(id, socket) {
  * Modify the offer/answer Session Description Protocol object
  * to enforce the codecs/options we want.
  */
-transformSdp(null);
-async function transformSdp(sdp) {
-    // Create mock peer to test
-    let peer = await createPeer('test', { socket: { socket: { emit: (e) => {} }}});
-    let offer = await peer.conn.createOffer(offerOptions);
-    console.dir(offer);
-
-    sdp = offer.sdp;
+function transformSdp(sdp) {
     let opusId = 111; // Default to what WebRTC was sending as of April 2019
-
     let lines = sdp.split('\r\n');
 
     for (let i = 0; i < lines.length; i++) {
@@ -651,7 +643,7 @@ async function transformSdp(sdp) {
         }
     }
 
-    sdp = lines.join('\r\n');
+    return lines.join('\r\n');
 }
 
 
@@ -716,6 +708,7 @@ class Socket {
 
             trace(`createOffer to ${socketId} started.`);
             let offer = await peer.conn.createOffer(offerOptions);
+            offer.sdp = transformSdp(offer.sdp);
             await peer.conn.setLocalDescription(offer);
 
             console.log(peer);
@@ -741,6 +734,7 @@ class Socket {
 
             await peer.conn.setRemoteDescription(offer);
             let answer = await peer.conn.createAnswer(offerOptions);
+            answer.sdp = transformSdp(answer.sdp);
             await peer.conn.setLocalDescription(answer);
 
             this.socket.emit('answer', answer, socketId);
