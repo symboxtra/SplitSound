@@ -113,6 +113,13 @@ if (showVideo === false) {
     hideVideoElements();
 }
 
+let hulaloopAddon = null;
+let hulaloop = null;
+let hulaloopAudioNode = null;
+if (isElectron) {
+    hulaloopAddon = require('bindings')('hulaloop-node.node');
+}
+
 let videoStream = null;
 
 
@@ -182,21 +189,20 @@ async function setupLocalMediaStreamsFromFile(filepath) {
  */
 function setupLocalMediaStreamFromHulaLoop() {
     // Import the HulaLoop C++ addon module
-    const hulaloopAddon = require('bindings')('hulaloop-node.node');
     console.dir(hulaloopAddon);
 
     let bufferFrames = 1024;
     let channels = 2;
     let sampleSize = 4;
-    let procNode = context.createScriptProcessor(bufferFrames, channels, channels);
+    hulaloopAudioNode = context.createScriptProcessor(bufferFrames, 0, channels);
 
-    const hulaloop = new hulaloopAddon.HulaLoop(
+    hulaloop = new hulaloopAddon.HulaLoop(
         (event, data) => {
             // TODO: Attach event emitter
             console.log(`Event: ${event} -- Data: ${data}`);
         },
         (errorMsg) => {
-            console.log(errorMsg);
+            console.warn(errorMsg);
         },
         {
             input: "test"
@@ -205,31 +211,45 @@ function setupLocalMediaStreamFromHulaLoop() {
     console.dir(hulaloop);
     console.log(context.sampleRate);
 
+    let devices = hulaloop.getDevices();
+    console.log(devices);
+
+    let success = hulaloop.setInput(devices[2]);
+    console.log(success);
+
     let hulaloopRawBuffer = new ArrayBuffer(bufferFrames * channels * sampleSize);
     let hulaloopBuffer = new Float32Array(hulaloopRawBuffer);
     console.log(hulaloopBuffer);
     console.log(hulaloopBuffer.length);
 
-    procNode.onaudioprocess = (e) => {
-        let outputBuffer = e.outputBuffer;
+    let outputBuffer;
+    let outputDataL;
+    let outputDataR;
+    let t0, t1;
+    let i;
+
+    let j = 0;
+
+    hulaloopAudioNode.onaudioprocess = (e) => {
+        outputBuffer = e.outputBuffer;
 
         // Get our data
         hulaloop.readBuffer(hulaloopRawBuffer);
 
         // Assume stereo for now
-        let outputDataL = outputBuffer.getChannelData(0);
-        let outputDataR = outputBuffer.getChannelData(1);
+        outputDataL = outputBuffer.getChannelData(0);
+        outputDataR = outputBuffer.getChannelData(1);
 
         // console.log(`${outputDataL.length}     ${outputDataR.length}`);
 
         // Loop over our data and convert from interleaved to planar
-        for (let i = 0; i < hulaloopBuffer.length; i += 2) {
+        for (i = 0; i < hulaloopBuffer.length - 1; i += 2) {
             outputDataL[i] = hulaloopBuffer[i];
             outputDataR[i] = hulaloopBuffer[i + 1];
         }
     };
 
-    procNode.connect(outgoingRemoteGainNode);
+    hulaloopAudioNode.connect(outgoingRemoteGainNode);
     hulaloop.startCapture();
 
     return hulaloop;
