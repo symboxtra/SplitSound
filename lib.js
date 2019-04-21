@@ -594,6 +594,8 @@ async function createPeer(id, socket) {
  * to enforce the codecs/options we want.
  */
 function transformSdp(sdp) {
+    console.log(sdp);
+
     let opusId = 111; // Default to what WebRTC was sending as of April 2019
     let lines = sdp.split('\r\n');
 
@@ -643,6 +645,12 @@ function transformSdp(sdp) {
 
             parts[1] = parts2.join(';');
             lines[i] = parts.join(' ');
+        }
+
+        // bandwidth
+        // set to 128kbps for now
+        if (line.includes(`b=AS:`)) {
+            lines[i] = "b=AS:128";
         }
     }
 
