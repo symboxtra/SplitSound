@@ -108,14 +108,6 @@ const streamFromElem = document.getElementById('streamFrom');
 if (showVideo === false) {
     hideVideoElements();
 }
-// Prevent file:// protocol issues
-if (isElectron === false && location.href.includes('file://')) {
-    enableReceiverOnly();
-}
-// Prevent screen capture issues
-if (isElectron === false) {
-    document.getElementById('fromDesktop').remove();
-}
 
 let videoStream = null;
 
@@ -125,7 +117,10 @@ let videoStream = null;
  * Stream related functions                       *
 ***************************************************/
 
-// Setup local media streams
+/**
+ * Source audio from user media like desktop capture
+ * or microphone input.
+ */
 async function setupLocalMediaStreams() {
     return new Promise((resolve, reject) => {
         navigator.mediaDevices.getUserMedia(mediaStreamConstraints)
@@ -148,6 +143,10 @@ async function setupLocalMediaStreams() {
     });
 }
 
+/**
+ * Source audio from a file.
+ * @param {string} filepath Relative or absolute path to the file
+ */
 async function setupLocalMediaStreamsFromFile(filepath) {
     return new Promise(async (resolve, reject) => {
         // AudioContext gets suspended if created before
@@ -177,6 +176,62 @@ async function setupLocalMediaStreamsFromFile(filepath) {
 
         resolve();
     });
+}
+
+/**
+ * Source audio from the HulaLoop Node addon.
+ * @param {string} filepath or absolute path to file
+ */
+function setupLocalMediaStreamFromHulaLoop() {
+    // Import the HulaLoop C++ addon module
+    const hulaloopAddon = require('bindings')('hulaloop-node.node');
+    console.dir(hulaloopAddon);
+
+    let bufferFrames = 1024;
+    let channels = 2;
+    let sampleSize = 4;
+    let procNode = context.createScriptProcessor(bufferFrames, channels, channels);
+
+    const hulaloop = new hulaloopAddon.HulaLoop(
+        (event, data) => {
+            // TODO: Attach event emitter
+            console.log(`Event: ${event} -- Data: ${data}`);
+        },
+        (errorMsg) => {
+            console.log(errorMsg);
+        },
+        {
+            input: "test"
+        }
+    );
+    console.dir(hulaloop);
+    console.log(context.sampleRate);
+
+    let hulaloopRawBuffer = new ArrayBuffer(bufferFrames * channels * sampleSize);
+    let hulaloopBuffer = new Float32Array(hulaloopRawBuffer);
+    console.log(hulaloopBuffer);
+
+    procNode.onaudioprocess = (e) => {
+        let outputBuffer = e.outputBuffer;
+
+        // Get our data
+        hulaloop.readBuffer(hulaloopRawBuffer);
+
+        // Assume stereo for now
+        let outputDataL = outputBuffer.getChannelData(0);
+        let outputDataR = outputBuffer.getChannelData(1);
+
+        // Loop over our data and convert from interleaved to planar
+        for (let i = 0; i < hulaloopBuffer.length; i += 2) {
+            outputDataL[i] = hulaloopBuffer[i];
+            outputDataR[i] = hulaloopBuffer[i + 1];
+        }
+    };
+
+    procNode.connect(outgoingRemoteGainNode);
+    hulaloop.startCapture();
+
+    return hulaloop;
 }
 
 function gotLocalMediaStream(mediaStream) {
@@ -216,7 +271,7 @@ function gotLocalVideoMediaStream(mediaStream) {
 function enableReceiverOnly() {
     receiverOnly = true;
     localMedia.innerHTML = 'Receiver only';
-    streamFromElem.style.display = 'none';
+    streamFromElem.disabled = true;
 
     trace('Switched to receiver only.');
 }

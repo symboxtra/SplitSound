@@ -17,6 +17,10 @@ button {
     max-width: 85%;
 }
 
+.hidden {
+    display: none;
+}
+
 .localVideo {
     max-width: 75%;
 }
