@@ -118,24 +118,6 @@ if (isElectron === false) {
 }
 
 let videoStream = null;
-let mediaSource = new MediaSource();
-let mediaBuffer = null;
-console.dir(mediaSource);
-
-// TODO: Delete. This doesn't seem like the way to go
-let mediaSourceAudio = new Audio();
-mediaSourceAudio.autoplay = true;
-mediaSourceAudio.controls = true;
-mediaSourceAudio.src = URL.createObjectURL(mediaSource);
-mediaSourceAudio.load();
-remoteMedia.appendChild(mediaSourceAudio);
-
-// Can't call addSourceBuffer until it's open
-mediaSource.addEventListener('sourceopen', async () => {
-    trace('MediaSource open.');
-    trace('Adding buffer to MediaSource.');
-    mediaBuffer = mediaSource.addSourceBuffer('audio/mpeg');
-});
 
 
 
@@ -183,59 +165,17 @@ async function setupLocalMediaStreamsFromFile(filepath) {
             await setupLocalMediaStreams();
         }
 
-        // Create media source
-        // This is attached to the HTML audio element and can be fed arbitrary buffers of audio
-        // TODO: Make sure we can support MIME other than audio/mpeg
-        let fileMediaSource = new MediaSource();
-        trace('Created FileMediaSource.');
-
-        // Can't call addSourceBuffer until it's open
-        fileMediaSource.addEventListener('sourceopen', async () => {
-            trace('FileMediaSource open.');
-
-            // Corner case for file:// protocol since fetch won't like it
-            if (isElectron === false && location.href.includes('file://')) {
-                // TODO: Audio still wouldn't transmit
-                // URL.revokeObjectURL(localAudio.src);
-                // localAudio.src = './test_file.mp3';
-            } else {
-                let buffer = fileMediaSource.addSourceBuffer('audio/mpeg');
-
-                trace('Fetching data...');
-                let data;
-                let resp = await fetch(filepath);
-                data = await resp.arrayBuffer();
-                console.dir(data);
-                buffer.appendBuffer(data);
-                trace('Data loaded.');
-            }
-        });
-
-        // We need a media stream for WebRTC, so run
-        // our MediaSource through a muted HTML audio element
-        // and grab its stream via captureStream()
+        // Attach file to audio element
         let localAudio = new Audio();
+        localAudio.src = filepath;
         localAudio.autoplay = true;
-        localAudio.muted = true;
-
-        // Only grab stream after it has loaded; won't have tracks if grabbed too early
-        localAudio.addEventListener('canplaythrough', () => {
-            try {
-                let localStream = localAudio.captureStream();
-                gotLocalMediaStream(localStream);
-            } catch (e) {
-                console.warn(`Failed to captureStream() on audio elem. Assuming unsupported. Switching to receiver only.`, e);
-
-                enableReceiverOnly();
-            }
-            resolve();
-        });
-
+        localAudio.controls = true;
         localMedia.appendChild(localAudio);
 
-        // srcObject doesn't work here ?
-        localAudio.src = URL.createObjectURL(fileMediaSource);
-        localAudio.load();
+        let localAudioNode = context.createMediaElementSource(localAudio);
+        localAudioNode.connect(outgoingRemoteGainNode);
+
+        resolve();
     });
 }
 
