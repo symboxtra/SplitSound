@@ -214,21 +214,13 @@ function setupLocalMediaStreamFromHulaLoop() {
     let devices = hulaloop.getDevices();
     console.log(devices);
 
-    let success = hulaloop.setInput(devices[2]);
-    console.log(success);
-
     let hulaloopRawBuffer = new ArrayBuffer(bufferFrames * channels * sampleSize);
     let hulaloopBuffer = new Float32Array(hulaloopRawBuffer);
-    console.log(hulaloopBuffer);
-    console.log(hulaloopBuffer.length);
 
     let outputBuffer;
     let outputDataL;
     let outputDataR;
-    let t0, t1;
-    let i;
-
-    let j = 0;
+    let i, j;
 
     hulaloopAudioNode.onaudioprocess = (e) => {
         outputBuffer = e.outputBuffer;
@@ -240,12 +232,10 @@ function setupLocalMediaStreamFromHulaLoop() {
         outputDataL = outputBuffer.getChannelData(0);
         outputDataR = outputBuffer.getChannelData(1);
 
-        // console.log(`${outputDataL.length}     ${outputDataR.length}`);
-
         // Loop over our data and convert from interleaved to planar
-        for (i = 0; i < hulaloopBuffer.length - 1; i += 2) {
-            outputDataL[i] = hulaloopBuffer[i];
-            outputDataR[i] = hulaloopBuffer[i + 1];
+        for (i = 0, j = 0; i < hulaloopBuffer.length - 1; i += 2, j++) {
+            outputDataL[j] = hulaloopBuffer[i];
+            outputDataR[j] = hulaloopBuffer[i + 1];
         }
     };
 
