@@ -40,7 +40,7 @@ const mediaStreamConstraints = {
 const offerOptions = {
     offerToReceiveAudio: 1,
     offerToReceiveVideo: (showVideo) ? 1 : 0,
-    voiceActivityDetection: true
+    voiceActivityDetection: false
 };
 
 // Set up RTCPeerConnection options
