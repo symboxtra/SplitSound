@@ -4,17 +4,77 @@ const ADDRESS = '0.0.0.0';
 const PORT = 8080;
 const MAX_CLIENTS = 50;
 
-let os = require('os');
-let app = require('http').createServer(handler);
-let io = require('socket.io')(app);
+const os = require('os');
+const fs = require('fs');
+const path = require('path');
+const url = require('url');
+const app = require('http').createServer(handler);
+const io = require('socket.io')(app);
 
 app.listen(PORT, ADDRESS);
 console.log(`Socket.io server listening on ${ADDRESS}:${PORT}...`);
 
+const mimeType = {
+    '.ico': 'image/x-icon',
+    '.html': 'text/html',
+    '.js': 'text/javascript',
+    '.json': 'application/json',
+    '.css': 'text/css',
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.wav': 'audio/wav',
+    '.mp3': 'audio/mpeg',
+    '.svg': 'image/svg+xml',
+    '.pdf': 'application/pdf',
+    '.doc': 'application/msword',
+    '.eot': 'appliaction/vnd.ms-fontobject',
+    '.ttf': 'aplication/font-sfnt'
+};
+
 // This response can be used to debug firewall or other connectivity issues
 function handler (req, res) {
-    res.statusCode = 404;
-    res.write('<h1>404 - Not Found</h1>');
+    // Hardcode / to index.html
+    if (req.url === '/') {
+        req.url = '/index.html';
+    }
+
+    const parsedUrl = url.parse(req.url);
+
+    // Prevent directory traversal
+    const sanitizePath = path.normalize(parsedUrl.pathname).replace(/^(\.\.[\/\\])+/, '');
+    const pathname = path.join(__dirname, sanitizePath);
+    const ext = path.parse(pathname).ext;
+
+    console.log(ext);
+
+    // Only respond to the essentials right now
+    if (ext === '.html' || ext === '.js' || ext === '.css') {
+        fs.exists(pathname, (exists) => {
+            if (!exists) {
+                res.statusCode = 404;
+                res.end(`File not found.`);
+                return;
+            }
+        });
+
+        fs.readFile(pathname, (err, data) => {
+            if (err) {
+                res.statusCode = 500;
+                res.end(`Could not read index.html: ${err}.`);
+            } else {
+                res.setHeader('Content-type', mimeType[ext] || 'text/plain');
+                res.end(data);
+            }
+        });
+
+        return;
+    }
+
+    res.statusCode = 200;
+    res.write('<h1>200 - OK</h1>');
+    res.write('You have successfully reached the signaling server!<br>');
+    res.write('This is not a part of SplitSound (for debugging only).<br><br>');
+    res.write('Click <a href="index.html">here</a> to continue using SplitSound.');
     res.end();
 }
 
