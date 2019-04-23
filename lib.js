@@ -133,6 +133,10 @@ let videoStream = null;
  * or microphone input.
  */
 async function setupLocalMediaStreams() {
+    // AudioContext gets suspended if created before
+    // a user interaction https://goo.gl/7K7WLu
+    context.resume();
+
     return new Promise((resolve, reject) => {
         navigator.mediaDevices.getUserMedia(mediaStreamConstraints)
         .then((stream) => {
@@ -159,11 +163,11 @@ async function setupLocalMediaStreams() {
  * @param {string} filepath Relative or absolute path to the file
  */
 async function setupLocalMediaStreamsFromFile(filepath) {
-    return new Promise(async (resolve, reject) => {
-        // AudioContext gets suspended if created before
-        // a user interaction https://goo.gl/7K7WLu
-        context.resume();
+    // AudioContext gets suspended if created before
+    // a user interaction https://goo.gl/7K7WLu
+    context.resume();
 
+    return new Promise(async (resolve, reject) => {
         if (receiverOnly) {
             resolve();
             return;
@@ -188,7 +192,10 @@ async function setupLocalMediaStreamsFromFile(filepath) {
  * @param {string} filepath or absolute path to file
  */
 function setupLocalMediaStreamFromHulaLoop() {
-    // Import the HulaLoop C++ addon module
+    // AudioContext gets suspended if created before
+    // a user interaction https://goo.gl/7K7WLu
+    context.resume();
+
     console.dir(hulaloopAddon);
 
     let bufferFrames = 1024;
