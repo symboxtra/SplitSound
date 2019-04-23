@@ -733,7 +733,7 @@ class Socket {
         this.rooms = [];
         this.peers = {};
 
-        this.socket = io.connect(`http://${this.ip}:${this.port}`);
+        this.socket = io.connect(`${this.ip}:${this.port}`);
         trace(`Created socket.`);
         console.dir(this.socket);
 
