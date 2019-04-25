@@ -1047,22 +1047,34 @@ console.log(analyzerNode.frequencyBinCount);
 let vizualizerOpt = document.getElementById('vizualizerOptions');
 
 function updateVizualizer() {
-    analyzerNode.getByteFrequencyData(vizFreqDomainData);
-
     let width = visualizerCanvas.width;
     let height = visualizerCanvas.height;
-    let barWidth = (width / (analyzerNode.frequencyBinCount / 9.3)); // Estimation for now
 
     // Clear old points
     vizCtx.clearRect(0, 0, width, height);
     vizCtx.fillStyle = 'black';
     vizCtx.fillRect(0, 0, width, height);
+
+    if (vizualizerOpt.value === 'none') {
+        // Slow the rate if we aren't actually drawing
+        setTimeout(() => {
+            vizAnimationFrameId = requestAnimationFrame(updateVizualizer);
+        }, 200);
+
+        return;
+    }
+
+    // Get the FFT data
+    analyzerNode.getByteFrequencyData(vizFreqDomainData);
+
+    // Stroke colors
     vizCtx.strokeStyle = 'yellow';
     vizCtx.fillStyle = 'yellow';
 
     vizCtx.beginPath();
     vizCtx.moveTo(0, height);
 
+    let barWidth = (width / (analyzerNode.frequencyBinCount / 9.3)); // Estimation for now
     let x = 0;
     let t = 1;
 
