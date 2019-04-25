@@ -54,58 +54,6 @@ const rtcConfig = {
     sdpSemantics: 'unified-plan'
 };
 
-
-// Setup Web Audio components
-window.AudioContext = (window.AudioContext || window.webkitAudioContext);
-let context = new AudioContext();
-let localStreamNode;
-let outgoingRemoteStreamNode = context.createMediaStreamDestination();
-let incomingRemoteGainNode = context.createGain();
-let outgoingRemoteGainNode = context.createGain();
-
-incomingRemoteGainNode.connect(context.destination);
-outgoingRemoteGainNode.connect(outgoingRemoteStreamNode);
-
-if (false) {
-    // Listen to what's going out in the left for reference
-    let panL = context.createStereoPanner();
-    panL.pan.value = -1;
-    panL.connect(context.destination);
-    outgoingRemoteGainNode.connect(panL);
-
-    // Listen to what's coming in in the right ear
-    let panR = context.createStereoPanner();
-    panR.pan.value = 1;
-    panR.connect(context.destination);
-    incomingRemoteGainNode.disconnect();
-    incomingRemoteGainNode.connect(panR);
-}
-
-
-// Visualizer canvas
-const visualizerCanvas = document.getElementById('visualizer');
-const vizCtx = visualizerCanvas.getContext('2d');
-visualizerCanvas.addEventListener('dblclick', () => {
-    if (visualizerCanvas.requestFullscreen) {
-        visualizerCanvas.requestFullscreen();
-    } else if (visualizerCanvas.webkitRequestFullscreen) {
-        visualizerCanvas.webkitRequestFullscreen();
-    } else if (visualizerCanvas.mozRequestFullScreen) {
-        visualizerCanvas.mozRequestFullScreen();
-    } else if (visualizerCanvas.msRequestFullscreen) {
-        visualizerCanvas.msRequestFullscreen();
-    }
-});
-
-// Define media elements.
-const localMedia = document.getElementById('localMedia');
-const localVideo = document.getElementById('localVideo');
-const localAudio = document.getElementById('localAudio');
-
-let localVideoStream = null;
-let localAudioElementNode = context.createMediaElementSource(localAudio);
-localAudioElementNode.connect(outgoingRemoteGainNode);
-
 // Container for remote media elements
 const remoteMedia = document.getElementById('remoteMedia');
 
@@ -114,6 +62,13 @@ const socketIdElem = document.getElementById('socketId');
 
 // Stream from options
 const deviceSelectElem = document.getElementById('deviceSelectOptions');
+
+// Define media elements.
+const localMedia = document.getElementById('localMedia');
+const localVideo = document.getElementById('localVideo');
+let localAudio = document.getElementById('localAudio');
+
+let localVideoStream = null;
 
 // Hide video elements
 if (settings.showVideo === false) {
@@ -145,6 +100,115 @@ if (settings.isElectron) {
         elem.classList.toggle('hidden');
     }
 }
+
+
+/**************************************************
+ * Web Audio API                                  *
+***************************************************/
+window.AudioContext = (window.AudioContext || window.webkitAudioContext);
+let context = null;
+let localStreamNode = null;
+let outgoingRemoteStreamNode = null;
+let incomingRemoteGainNode = null;
+let outgoingRemoteGainNode = null;
+let localAudioElementNode = null;
+
+let analyzerNode = null;
+let vizFreqDomainData = null;
+let vizTimeoutId = null;
+
+function createAudioContext(sampleRate) {
+    sampleRate = sampleRate || 44100.0;
+
+    // Stop old context
+    if (context) {
+        context.close();
+        context = null;
+
+        // Create new local audio element
+        // MediaElementSource cries if created twice from same element
+        let newLocalAudio = new Audio();
+        newLocalAudio.id = localAudio.id;
+        newLocalAudio.className = localAudio.className;
+        newLocalAudio.autoplay = localAudio.autoplay;
+        newLocalAudio.controls = localAudio.controls;
+
+        localAudio.remove();
+        localAudio = newLocalAudio;
+        localMedia.appendChild(localAudio);
+    }
+
+    // TODO: Adjust latencyHint based on app mode
+    context = new AudioContext({ latencyHint: "interactive", sampleRate: sampleRate });
+
+    if (context.sampleRate != sampleRate) {
+        console.warn(`AudioContext ignored sampleRate option.\nPreferred: ${sampleRate}  Current: ${context.sampleRate}`);
+    }
+
+    outgoingRemoteStreamNode = context.createMediaStreamDestination();
+    localAudioElementNode = context.createMediaElementSource(localAudio);
+    incomingRemoteGainNode = context.createGain();
+    outgoingRemoteGainNode = context.createGain();
+
+    incomingRemoteGainNode.connect(context.destination);
+    localAudioElementNode.connect(outgoingRemoteGainNode);
+    outgoingRemoteGainNode.connect(outgoingRemoteStreamNode);
+
+    if (false) {
+        // Listen to what's going out in the left for reference
+        let panL = context.createStereoPanner();
+        panL.pan.value = -1;
+        panL.connect(context.destination);
+        outgoingRemoteGainNode.connect(panL);
+
+        // Listen to what's coming in in the right ear
+        let panR = context.createStereoPanner();
+        panR.pan.value = 1;
+        panR.connect(context.destination);
+        incomingRemoteGainNode.disconnect();
+        incomingRemoteGainNode.connect(panR);
+    }
+
+    // Visualizer
+    analyzerNode = context.createAnalyser();
+    analyzerNode.smoothingTimeConstant = 0.6;
+    analyzerNode.fftSize = 2048;
+    analyzerNode.minDecibels = -100;
+    analyzerNode.maxDecibels = -10;
+
+    // Check if we need a new size
+    console.log(analyzerNode.frequencyBinCount);
+    if (!vizFreqDomainData || analyzerNode.frequencyBinCount < vizFreqDomainData.length) {
+        vizFreqDomainData = new Uint8Array(analyzerNode.frequencyBinCount);
+    }
+
+    // Connect local and remote streams
+    outgoingRemoteGainNode.connect(analyzerNode);
+    incomingRemoteGainNode.connect(analyzerNode);
+
+    // Stop old, start new
+    clearTimeout(vizTimeoutId);
+    vizTimeoutId = setTimeout(() => requestAnimationFrame(updateVizualizer), 0);
+
+    return context;
+}
+
+
+// Visualizer canvas
+const visualizerCanvas = document.getElementById('visualizer');
+const vizCtx = visualizerCanvas.getContext('2d');
+visualizerCanvas.addEventListener('dblclick', () => {
+    if (visualizerCanvas.requestFullscreen) {
+        visualizerCanvas.requestFullscreen();
+    } else if (visualizerCanvas.webkitRequestFullscreen) {
+        visualizerCanvas.webkitRequestFullscreen();
+    } else if (visualizerCanvas.mozRequestFullScreen) {
+        visualizerCanvas.mozRequestFullScreen();
+    } else if (visualizerCanvas.msRequestFullscreen) {
+        visualizerCanvas.msRequestFullscreen();
+    }
+});
+
 
 
 /**************************************************
@@ -1031,19 +1095,6 @@ class Room {
 // Visualizer
 // Based on: https://stackoverflow.com/a/49371349/6798110
 // and https://github.com/webrtc/samples/blob/gh-pages/src/content/peerconnection/webaudio-output/js/main.js
-let analyzerNode = context.createAnalyser();
-analyzerNode.smoothingTimeConstant = 0.6;
-analyzerNode.fftSize = 2048;
-analyzerNode.minDecibels = -100;
-analyzerNode.maxDecibels = -10;
-
-let vizFreqDomainData = new Uint8Array(analyzerNode.frequencyBinCount);
-let vizAnimationFrameId = requestAnimationFrame(updateVizualizer);
-outgoingRemoteGainNode.connect(analyzerNode);
-incomingRemoteGainNode.connect(analyzerNode);
-
-console.log(analyzerNode.frequencyBinCount);
-
 let vizualizerOpt = document.getElementById('vizualizerOptions');
 
 function updateVizualizer() {
@@ -1057,8 +1108,8 @@ function updateVizualizer() {
 
     if (vizualizerOpt.value === 'none') {
         // Slow the rate if we aren't actually drawing
-        setTimeout(() => {
-            vizAnimationFrameId = requestAnimationFrame(updateVizualizer);
+        vizTimeoutId = setTimeout(() => {
+            requestAnimationFrame(updateVizualizer);
         }, 200);
 
         return;
@@ -1106,7 +1157,7 @@ function updateVizualizer() {
 
     vizCtx.stroke();
 
-    setTimeout(() => {
-        vizAnimationFrameId = requestAnimationFrame(updateVizualizer);
+    vizTimeoutId = setTimeout(() => {
+        requestAnimationFrame(updateVizualizer);
     }, 20);
 }

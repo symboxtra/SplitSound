@@ -52,6 +52,7 @@
     <script type="text/javascript">
         let deviceSelect = document.getElementById('deviceSelectOptions');
         let socket = new Socket('https://signals.symboxtra.dynu.net', 443);
+        createAudioContext(44100.0);
 
         // Fill the device selector
         updateDeviceList(deviceSelect);
@@ -85,8 +86,6 @@
                     console.warn(`Unrecognized owner: ${sel.getAttribute('data-owner')}`);
                     break;
             }
-
-
 
             let room = document.getElementById('connectRoom').value;
             socket.joinRoom(room);
