@@ -3,13 +3,18 @@
 /**************************************************
  * Initialization                                 *
 ***************************************************/
-let receiverOnly = false;
-let showVideo = false;
-let isElectron = (navigator.userAgent.toLowerCase().indexOf(' electron/') > -1);
+const settings = {
+    receiverOnly: false,
+    showVideo: false,
+    isElectron: false,
+    showHulaloopDevices: true,
+    showLocalDevices: true,
+    showWindowsLoopback: true // TODO: Turn off once HulaLoop testing is done
+};
+settings.isElectron = (navigator.userAgent.toLowerCase().indexOf(' electron/') > -1);
 
 // Set up media stream constant and parameters.
-// Audio is mono right now
-const mediaStreamConstraints = {
+const baseMediaStreamConstraints = {
     audio: {
         mandatory: {
             chromeMediaSource: 'desktop',
@@ -30,6 +35,7 @@ const mediaStreamConstraints = {
         }
     }
 };
+let mediaStreamConstraints = JSON.parse(JSON.stringify(baseMediaStreamConstraints));
 
 // Mac and Linux have to disable audio
 // if you want to stream video.
@@ -39,7 +45,7 @@ const mediaStreamConstraints = {
 // Set up RTCPeer offer options
 const offerOptions = {
     offerToReceiveAudio: 1,
-    offerToReceiveVideo: (showVideo) ? 1 : 0,
+    offerToReceiveVideo: (settings.showVideo) ? 1 : 0,
     voiceActivityDetection: false
 };
 
@@ -96,6 +102,7 @@ const localMedia = document.getElementById('localMedia');
 const localVideo = document.getElementById('localVideo');
 const localAudio = document.getElementById('localAudio');
 
+let localVideoStream = null;
 let localAudioElementNode = context.createMediaElementSource(localAudio);
 localAudioElementNode.connect(outgoingRemoteGainNode);
 
@@ -106,41 +113,101 @@ const remoteMedia = document.getElementById('remoteMedia');
 const socketIdElem = document.getElementById('socketId');
 
 // Stream from options
-const streamFromElem = document.getElementById('streamFrom');
+const deviceSelectElem = document.getElementById('deviceSelectOptions');
 
 // Hide video elements
-if (showVideo === false) {
+if (settings.showVideo === false) {
     hideVideoElements();
 }
 
 let hulaloopAddon = null;
 let hulaloop = null;
 let hulaloopAudioNode = null;
-if (isElectron) {
+if (settings.isElectron) {
     hulaloopAddon = require('bindings')('hulaloop-node.node');
+    hulaloop = new hulaloopAddon.HulaLoop(
+        (event, data) => {
+            // TODO: Attach event emitter
+            console.log(`Event: ${event} -- Data: ${data}`);
+        },
+        (errorMsg) => {
+            // TODO: Make this not annoying
+            alert(errorMsg);
+        },
+        {}
+    );
+} else {
+    settings.showHulaloopDevices = false;
+
+    // Hide elements with the electronOnly class
+    let elems = document.getElementsByClassName('electronOnly');
+    for (elem of elems) {
+        elem.classList.toggle('hidden');
+    }
 }
-
-let videoStream = null;
-
 
 
 /**************************************************
  * Stream related functions                       *
 ***************************************************/
 
+function resetConnection(socket) {
+    // Leave any old rooms
+    if (socket) {
+        socket.leaveAllRooms();
+    }
+
+    // Reset constraints
+    mediaStreamConstraints = JSON.parse(JSON.stringify(baseMediaStreamConstraints));
+
+    // Disconnect the local stream if we set one up
+    if (localStreamNode) {
+        localStreamNode.disconnect();
+        localStreamNode = null;
+    }
+
+    // Stop HulaLoop processing
+    if (hulaloopAudioNode) {
+        hulaloop.stopCapture();
+        hulaloopAudioNode.disconnect();
+    }
+
+    if (localVideo) {
+        localVideoStream = null;
+        localVideo.srcObject = null;
+    }
+}
+
 /**
  * Source audio from user media like desktop capture
  * or microphone input.
+ * @param {string} device Input device name
  */
-async function setupLocalMediaStreams() {
+async function setupLocalMediaStreams(deviceId) {
     // AudioContext gets suspended if created before
     // a user interaction https://goo.gl/7K7WLu
     context.resume();
 
+    if (deviceId) {
+        // Remove the constraints that exclude microphone
+        delete mediaStreamConstraints.audio.mandatory.chromeMediaSource;
+
+        // Remove the constraints that turn off mic processing
+        delete mediaStreamConstraints.audio.mandatory;
+        mediaStreamConstraints.deviceId = deviceId;
+
+        if (settings.showVideo) {
+            // Can't do screen capture without screen audio
+            mediaStreamConstraints.video = true;
+        } else {
+            mediaStreamConstraints.video = false;
+        }
+    }
+
     return new Promise((resolve, reject) => {
         navigator.mediaDevices.getUserMedia(mediaStreamConstraints)
         .then((stream) => {
-            if (showVideo) {
+            if (settings.showVideo) {
                 gotLocalVideoMediaStream(stream);
             }
 
@@ -149,10 +216,6 @@ async function setupLocalMediaStreams() {
         })
         .catch((e) => {
             console.warn(`Failed to obtain local media stream: ${e}`);
-
-            // We weren't able to get a local media stream
-            // Become a receiver
-            enableReceiverOnly();
             reject(e);
         });
     });
@@ -168,12 +231,12 @@ async function setupLocalMediaStreamsFromFile(filepath) {
     context.resume();
 
     return new Promise(async (resolve, reject) => {
-        if (receiverOnly) {
+        if (settings.receiverOnly) {
             resolve();
             return;
         }
 
-        if (showVideo) {
+        if (settings.showVideo) {
             // This will grab video and audio.
             // We'll overwrite the audio once it's done
             await setupLocalMediaStreams();
@@ -189,32 +252,28 @@ async function setupLocalMediaStreamsFromFile(filepath) {
 
 /**
  * Source audio from the HulaLoop Node addon.
- * @param {string} filepath or absolute path to file
+ * @param {string} device Input device name
  */
-function setupLocalMediaStreamFromHulaLoop() {
+function setupLocalMediaStreamFromHulaLoop(device) {
     // AudioContext gets suspended if created before
     // a user interaction https://goo.gl/7K7WLu
     context.resume();
 
-    console.dir(hulaloopAddon);
+    // Set the input before starting capture
+    // Don't start the stream unless this succeeds
+    if (device) {
+        let success = hulaloop.setInput(device);
+        if (!success) {
+            // Error message will be printed via callback
+            return;
+        }
+    }
 
     let bufferFrames = 1024;
     let channels = 2;
     let sampleSize = 4;
     hulaloopAudioNode = context.createScriptProcessor(bufferFrames, 0, channels);
 
-    hulaloop = new hulaloopAddon.HulaLoop(
-        (event, data) => {
-            // TODO: Attach event emitter
-            console.log(`Event: ${event} -- Data: ${data}`);
-        },
-        (errorMsg) => {
-            console.warn(errorMsg);
-        },
-        {
-            input: "test"
-        }
-    );
     console.dir(hulaloop);
     console.log(context.sampleRate);
 
@@ -255,7 +314,7 @@ function setupLocalMediaStreamFromHulaLoop() {
 function gotLocalMediaStream(mediaStream) {
     let videoTracks = mediaStream.getVideoTracks();
     if (videoTracks.length > 0) {
-        localVideo.srcObject = mediaStream;
+        gotLocalVideoMediaStream(mediaStream);
     }
 
     // Disconnect our old one if we get a new one
@@ -274,7 +333,8 @@ function gotLocalMediaStream(mediaStream) {
 }
 
 function gotLocalVideoMediaStream(mediaStream) {
-    videoStream = mediaStream;
+    localVideoStream = mediaStream;
+    localVideo.srcObject = mediaStream;
 
     trace('Received local video stream.');
 }
@@ -286,10 +346,60 @@ function gotLocalVideoMediaStream(mediaStream) {
  * DOM related functions                          *
 ***************************************************/
 
+function createDeviceOption(name, value, owner) {
+    let opt = document.createElement('option');
+    opt.innerHTML = name;
+    opt.value = value;
+    opt.classList.add('generated-device');
+    opt.setAttribute('data-owner', owner);
+
+    return opt;
+}
+
+function updateDeviceList(elem) {
+    // Reset any old devices that we're responsible for
+    let oldDevs = elem.getElementsByClassName('generated-device');
+    for (let dev of oldDevs) {
+        console.log(dev);
+        dev.remove();
+    }
+
+    if (settings.showHulaloopDevices) {
+        let devices = hulaloop.getDevices();
+        devices.forEach((val) => {
+            let opt = createDeviceOption(`HulaLoop - ${val}`, val, 'hulaloop');
+            elem.appendChild(opt);
+        });
+    }
+
+    if (settings.showLocalDevices) {
+        navigator.mediaDevices.enumerateDevices()
+        .then((devices) => {
+            for (let dev of devices) {
+                // TODO: Setup output devices
+                if (dev.kind === 'audioinput') {
+                    let name = dev.label;
+                    if (name.length === 0) {
+                        // default, communications, or some hash
+                        // 14 is the length of communications
+                        name = dev.deviceId.substring(0, 14);
+                    }
+                    let opt = createDeviceOption(`Browser - ${name}`, dev.deviceId, 'browser');
+                    elem.appendChild(opt);
+                }
+            }
+        })
+        .catch((e) => {
+            console.warn(`Error fetching local devices: ${e}.`);
+            console.log(e);
+        });
+    }
+}
+
 function enableReceiverOnly() {
-    receiverOnly = true;
+    settings.receiverOnly = true;
     localMedia.innerHTML = 'Receiver only';
-    streamFromElem.disabled = true;
+    deviceSelectElem.disabled = true;
 
     trace('Switched to receiver only.');
 }
@@ -349,13 +459,13 @@ class Peer {
         // TODO: Figure out bidirectional issues
         // Default to send & receive unless we know we're receiver only
         // let direction = 'sendrecv';
-        // if (receiverOnly) {
+        // if (settings.receiverOnly) {
         //     direction = 'recvonly';
         // }
 
         // // Add transceivers
         // this.conn.addTransceiver('audio', { direction: direction });
-        // if (showVideo) {
+        // if (settings.showVideo) {
         //     this.conn.addTransceiver('video', { direction: direction });
         // }
 
@@ -546,7 +656,7 @@ class Peer {
         }
 
         // Do video if we should
-        if (showVideo && videoTracks.length > 0) {
+        if (settings.showVideo && videoTracks.length > 0) {
             this.videoElem = document.createElement('video');
             this.videoElem.classList.add('remoteVideo');
             this.videoElem.autoplay = true;
@@ -575,16 +685,16 @@ async function createPeer(id, socket) {
     let peer = null;
     let videoTracks = null;
     let audioTracks = null;
-    if (receiverOnly === false) {
-        if (showVideo && videoStream) {
-            videoTracks = videoStream.getVideoTracks();
+    if (settings.receiverOnly === false) {
+        if (settings.showVideo && localVideoStream) {
+            videoTracks = localVideoStream.getVideoTracks();
         }
         audioTracks = localStream.getAudioTracks();
 
         trace(`Audio tracks:`);
         console.dir(audioTracks);
 
-        if (showVideo && videoTracks.length > 0) {
+        if (settings.showVideo && videoTracks.length > 0) {
             trace(`Using video device: ${videoTracks[0].label}.`);
         }
         if (audioTracks.length > 0) {
@@ -596,10 +706,10 @@ async function createPeer(id, socket) {
     peer = new Peer(id, socket);
 
     // Add local stream to connection and create offer to connect.
-    if (receiverOnly === false && showVideo && videoTracks[0]) {
-        peer.conn.addTrack(videoTracks[0], videoStream);
+    if (settings.receiverOnly === false && settings.showVideo && videoTracks[0]) {
+        peer.conn.addTrack(videoTracks[0], localVideoStream);
     }
-    if (receiverOnly === false && audioTracks[0]) {
+    if (settings.receiverOnly === false && audioTracks[0]) {
         peer.conn.addTrack(audioTracks[0], localStream);
     }
 

@@ -18,12 +18,10 @@
         <div id="streamFrom">
             <div><b>Stream from: </b></div>
             <div class="inputOptions">
-                <select id="streamFromOptions">
-                    <option value="none">None</option>
-                    <option value="file">File</option>
-                    <option value="mic">Microphone</option>
-                    <option class="electronOnly" value="hulaloop">HulaLoop</option>
-                    <option class="electronOnly" value="desktop">Desktop Capture (Windows only)</option>
+                <select id="deviceSelectOptions">
+                    <option value="none" data-owner="html">None</option>
+                    <option value="file" data-owner="html">File</option>
+                    <!-- Auto-generated options -->
                 </select>
             </div>
         </div>
@@ -51,49 +49,43 @@
     <script type="text/javascript" src="./node_modules/socket.io-client/dist/socket.io.js"></script>
     <script type="text/javascript" src="./lib.js"></script>
     <script type="text/javascript">
-
-        // Hide Electron only options
-        if (isElectron === false) {
-            let elems = document.getElementsByClassName('electronOnly');
-            for (elem of elems) {
-                elem.classList.toggle('hidden');
-            }
-        }
-
+        let deviceSelect = document.getElementById('deviceSelectOptions');
         let socket = new Socket('https://signals.symboxtra.dynu.net', 443);
 
+        // Fill the device selector
+        updateDeviceList(deviceSelect);
+
+        // Start connection
         document.getElementById('connectButton').addEventListener('click', async () => {
-            // Leave any old rooms
-            socket.leaveAllRooms();
+            resetConnection(socket);
 
-            let source = document.getElementById('streamFromOptions').value;
+            let sel = deviceSelect[deviceSelect.selectedIndex];
+            let owner = sel.getAttribute('data-owner') || '';
 
-            switch (source) {
-                case 'file':
-                    await setupLocalMediaStreamsFromFile('./test_file_left_panned_sweep.mp3');
-                    break;
-                case 'mic':
-                    // Disable the constraints that exclude microphone
-                    delete mediaStreamConstraints.audio.mandatory.chromeMediaSource;
-                    if (showVideo) {
-                        // Can't do screen capture without screen audio
-                        mediaStreamConstraints.video = true;
-                    } else {
-                        mediaStreamConstraints.video = false;
-                    }
-                    await setupLocalMediaStreams();
-                    break;
-                case 'desktop':
-                    await setupLocalMediaStreams();
-                    break;
+            switch (owner) {
                 case 'hulaloop':
-                    setupLocalMediaStreamFromHulaLoop();
+                    await setupLocalMediaStreamFromHulaLoop(sel.value);
                     break;
-                case 'none':
+                case 'browser':
+                    await setupLocalMediaStreams(sel.value);
+                    break;
+                case 'html':
+                    switch (sel.value) {
+                        case 'file':
+                            await setupLocalMediaStreamsFromFile('./test_file_left_panned_sweep.mp3');
+                            break;
+                        case 'none':
+                        default:
+                            enableReceiverOnly();
+                            break;
+                    }
+                    break;
                 default:
-                    enableReceiverOnly();
+                    console.warn(`Unrecognized owner: ${sel.getAttribute('data-owner')}`);
                     break;
             }
+
+
 
             let room = document.getElementById('connectRoom').value;
             socket.joinRoom(room);
@@ -101,7 +93,7 @@
 
         document.addEventListener('keyup', (e) => {
             if (e.which === 123) {
-                if (isElectron) {
+                if (settings.isElectron) {
                     require('remote').getCurrentWindow().toggleDevTools();
                 }
             } else if (e.which === 116) {
