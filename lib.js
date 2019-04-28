@@ -92,8 +92,8 @@ if (settings.isElectron) {
 
     // Hide elements with the electronOnly class
     let elems = document.getElementsByClassName('electronOnly');
-    for (elem of elems) {
-        elem.classList.toggle('hidden');
+    for (let i = 0; i < elems.length; i++) {
+        elems[i].classList.toggle('hidden');
     }
 }
 
@@ -142,7 +142,15 @@ function createAudioContext(sampleRate) {
         console.warn(`AudioContext ignored sampleRate option.\nPreferred: ${sampleRate}  Current: ${context.sampleRate}`);
     }
 
-    outgoingRemoteStreamNode = context.createMediaStreamDestination();
+    // Edge doesn't have this
+    if (context.createMediaStreamDestination) {
+        outgoingRemoteStreamNode = context.createMediaStreamDestination();
+    } else {
+        // Create a dummy node and define stream
+        outgoingRemoteStreamNode = context.createGain();
+        outgoingRemoteStreamNode.stream = null;
+        enableReceiverOnly();
+    }
     localAudioElementNode = context.createMediaElementSource(localAudio);
     incomingRemoteGainNode = context.createGain();
     outgoingRemoteGainNode = context.createGain();
@@ -429,9 +437,9 @@ function createDeviceOption(name, value, owner) {
 function updateDeviceList(elem) {
     // Reset any old devices that we're responsible for
     let oldDevs = elem.getElementsByClassName('generated-device');
-    for (let dev of oldDevs) {
-        console.log(dev);
-        dev.remove();
+    for (let i = 0; i < oldDevs.length; i++) {
+        console.log(oldDevs[i]);
+        oldDevs[i].remove();
     }
 
     if (settings.showHulaloopDevices) {
@@ -556,7 +564,8 @@ class Peer {
         // Setup transceivers so that our SDP offer has the right track options
         // Only add transceivers if we need to since Chrome -> non-Chrome
         // has been having issues when both ends have transceivers
-        if (settings.receiverOnly) {
+        // Edge doesn't have addTransceiver yet...
+        if (settings.receiverOnly && this.conn.addTransceiver) {
             this.conn.addTransceiver('audio', { direction: direction });
             if (settings.showVideo) {
                 this.conn.addTransceiver('video', { direction: direction });
@@ -584,23 +593,25 @@ class Peer {
 
         // Set up additional data channel to pass messages peer-to-peer
         // There is a separate channel for sending and receiving
-        this.sendChannel = this.conn.createDataChannel('session-info');
-        this.sendChannel.addEventListener('open', (event) => {
-            trace(`Data channel to ${this.id} opened.`);
-        });
-
-        this.conn.addEventListener('datachannel', (event) => {
-            trace(`Received data channel '${event.channel.label}' from ${this.id}.`);
-            this.recvChannel = event.channel;
-
-            this.recvChannel.addEventListener('message', (event) => {
-                trace(`Message received from ${this.id}:`);
-                console.dir(JSON.parse(event.data));
+        if (this.conn.createDataChannel) {
+            this.sendChannel = this.conn.createDataChannel('session-info');
+            this.sendChannel.addEventListener('open', (event) => {
+                trace(`Data channel to ${this.id} opened.`);
             });
 
-            // Send an initial message
-            this.sendChannel.send(JSON.stringify({ type: 'msg', contents: 'hello' }));
-        });
+            this.conn.addEventListener('datachannel', (event) => {
+                trace(`Received data channel '${event.channel.label}' from ${this.id}.`);
+                this.recvChannel = event.channel;
+
+                this.recvChannel.addEventListener('message', (event) => {
+                    trace(`Message received from ${this.id}:`);
+                    console.dir(JSON.parse(event.data));
+                });
+
+                // Send an initial message
+                this.sendChannel.send(JSON.stringify({ type: 'msg', contents: 'hello' }));
+            });
+        }
     }
 
     cleanup() {
