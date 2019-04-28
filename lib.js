@@ -216,6 +216,11 @@ visualizerCanvas.addEventListener('dblclick', () => {
 ***************************************************/
 
 function resetConnection(socket) {
+    // AudioContext gets suspended if created before
+    // a user interaction https://goo.gl/7K7WLu
+    // This will be called by 'None' receiver
+    context.resume();
+
     // Leave any old rooms
     if (socket) {
         socket.leaveAllRooms();
