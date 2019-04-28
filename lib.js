@@ -7,6 +7,7 @@ const settings = {
     receiverOnly: false,
     showVideo: false,
     isElectron: false,
+    isSafari: false,
     showHulaloopDevices: true,
     showLocalDevices: true,
     showWindowsLoopback: true // TODO: Turn off once HulaLoop testing is done
@@ -134,6 +135,7 @@ function createAudioContext(sampleRate) {
         newLocalAudio.controls = localAudio.controls;
 
         localAudio.remove();
+        localAudio = null;
         localAudio = newLocalAudio;
         localMedia.appendChild(localAudio);
     }
@@ -525,18 +527,46 @@ class Peer {
         this.conn = new RTCPeerConnection(rtcConfig);
         trace(`Created peer connection object for ${this.id}.`);
 
-        // TODO: Figure out bidirectional issues
-        // Default to send & receive unless we know we're receiver only
-        // let direction = 'sendrecv';
-        // if (settings.receiverOnly) {
-        //     direction = 'recvonly';
-        // }
+        // Handle track setup
+        let localAudioStream = outgoingRemoteStreamNode.stream;
+        let videoTracks = null;
+        let audioTracks = null;
+        if (settings.receiverOnly === false) {
+            if (settings.showVideo && localVideoStream) {
+                videoTracks = localVideoStream.getVideoTracks();
+            }
+            audioTracks = localAudioStream.getAudioTracks();
 
-        // // Add transceivers
-        // this.conn.addTransceiver('audio', { direction: direction });
-        // if (settings.showVideo) {
-        //     this.conn.addTransceiver('video', { direction: direction });
-        // }
+            trace(`Audio tracks:`);
+            console.dir(audioTracks);
+
+            if (settings.showVideo && videoTracks.length > 0) {
+                trace(`Using video device: ${videoTracks[0].label}.`);
+            }
+            if (audioTracks.length > 0) {
+                trace(`Using audio device: ${audioTracks[0].label}.`);
+            }
+        }
+
+        // Default to send & receive unless we know we're receiver only
+        let direction = 'sendrecv';
+        if (settings.receiverOnly) {
+            direction = 'recvonly';
+        }
+
+        // Setup transceivers
+        this.conn.addTransceiver('audio', { direction: direction });
+        if (settings.showVideo) {
+            this.conn.addTransceiver('video', { direction: direction });
+        }
+
+        // Add local streams to connection
+        if (settings.receiverOnly === false && settings.showVideo && videoTracks[0]) {
+            this.conn.addTrack(videoTracks[0], localVideoStream);
+        }
+        if (settings.receiverOnly === false && audioTracks[0]) {
+            this.conn.addTrack(audioTracks[0], localAudioStream);
+        }
 
         // Use arrow function so that 'this' is available in class methods
         this.conn.addEventListener('icecandidate', (event) => {
@@ -741,51 +771,6 @@ class Peer {
 }
 
 /**
- * Factory function for creating a new Peer and connecting streams to it.
- * @param {string} id
- */
-async function createPeer(id, socket) {
-    trace(`Starting connection to ${id}...`);
-
-    // Mask global localStream on purpose
-    // Easily revertible to old style streams from WebAudio changes
-    let localStream = outgoingRemoteStreamNode.stream;
-
-    let peer = null;
-    let videoTracks = null;
-    let audioTracks = null;
-    if (settings.receiverOnly === false) {
-        if (settings.showVideo && localVideoStream) {
-            videoTracks = localVideoStream.getVideoTracks();
-        }
-        audioTracks = localStream.getAudioTracks();
-
-        trace(`Audio tracks:`);
-        console.dir(audioTracks);
-
-        if (settings.showVideo && videoTracks.length > 0) {
-            trace(`Using video device: ${videoTracks[0].label}.`);
-        }
-        if (audioTracks.length > 0) {
-            trace(`Using audio device: ${audioTracks[0].label}.`);
-        }
-    }
-
-    // Create peer connections and add behavior.
-    peer = new Peer(id, socket);
-
-    // Add local stream to connection and create offer to connect.
-    if (settings.receiverOnly === false && settings.showVideo && videoTracks[0]) {
-        peer.conn.addTrack(videoTracks[0], localVideoStream);
-    }
-    if (settings.receiverOnly === false && audioTracks[0]) {
-        peer.conn.addTrack(audioTracks[0], localStream);
-    }
-
-    return peer;
-}
-
-/**
  * Munge the offer/answer Session Description Protocol object
  * to enforce the codecs/options we want.
  */
@@ -964,13 +949,17 @@ class Socket {
                 this.handleDisconnect(peer.id);
             }
 
-            peer = await createPeer(socketId, this);
+            peer = new Peer(socketId, this);
             this.peers[peer.id] = peer;
             peer.offered = true;
 
             trace(`createOffer to ${socketId} started.`);
             let offer = await peer.conn.createOffer(offerOptions);
             offer.sdp = transformSdp(offer.sdp);
+
+            trace(`Outgoing offer sdp:`);
+            console.log(offer.sdp);
+
             await peer.conn.setLocalDescription(offer);
 
             this.socket.emit('offer', offer, peer.id);
@@ -987,7 +976,7 @@ class Socket {
                 console.warn(`Peer already existed at offer.`);
                 peer.reconnect();
             } else {
-                peer = await createPeer(socketId, this);
+                peer = new Peer(socketId, this);
                 this.peers[peer.id] = peer;
             }
 
@@ -1017,7 +1006,7 @@ class Socket {
             }
 
             trace(`Answer received from ${socketId}:`);
-            console.dir(answer);
+            console.dir(answer.sdp);
 
             await peer.conn.setRemoteDescription(answer);
 
