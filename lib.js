@@ -38,11 +38,6 @@ const baseMediaStreamConstraints = {
 };
 let mediaStreamConstraints = JSON.parse(JSON.stringify(baseMediaStreamConstraints));
 
-// Mac and Linux have to disable audio
-// if you want to stream video.
-// Receiver only will work fine either way
-//mediaStreamConstraints.audio = false;
-
 // Set up RTCPeer offer options
 const offerOptions = {
     offerToReceiveAudio: 1,
@@ -259,20 +254,24 @@ async function setupLocalMediaStreams(deviceId) {
     // a user interaction https://goo.gl/7K7WLu
     context.resume();
 
+    // Remove the constraints that exclude microphone
+    //delete mediaStreamConstraints.audio.mandatory.chromeMediaSource;
+
+    // Remove the constraints that turn off mic processing
+    //delete mediaStreamConstraints.audio.mandatory;
+
+    // Default to the simplest option
+    mediaStreamConstraints.audio = true;
+
+    if (settings.showVideo) {
+        // Can't do screen capture without screen audio
+        mediaStreamConstraints.video = true;
+    } else {
+        mediaStreamConstraints.video = false;
+    }
+
     if (deviceId) {
-        // Remove the constraints that exclude microphone
-        delete mediaStreamConstraints.audio.mandatory.chromeMediaSource;
-
-        // Remove the constraints that turn off mic processing
-        delete mediaStreamConstraints.audio.mandatory;
         mediaStreamConstraints.deviceId = deviceId;
-
-        if (settings.showVideo) {
-            // Can't do screen capture without screen audio
-            mediaStreamConstraints.video = true;
-        } else {
-            mediaStreamConstraints.video = false;
-        }
     }
 
     return new Promise((resolve, reject) => {
@@ -554,10 +553,14 @@ class Peer {
             direction = 'recvonly';
         }
 
-        // Setup transceivers
-        this.conn.addTransceiver('audio', { direction: direction });
-        if (settings.showVideo) {
-            this.conn.addTransceiver('video', { direction: direction });
+        // Setup transceivers so that our SDP offer has the right track options
+        // Only add transceivers if we need to since Chrome -> non-Chrome
+        // has been having issues when both ends have transceivers
+        if (settings.receiverOnly) {
+            this.conn.addTransceiver('audio', { direction: direction });
+            if (settings.showVideo) {
+                this.conn.addTransceiver('video', { direction: direction });
+            }
         }
 
         // Add local streams to connection
