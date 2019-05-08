@@ -520,10 +520,10 @@ function trace(text) {
  * WebRTC connections                             *
 ***************************************************/
 class Peer {
-    constructor(id, signaller) {
+    constructor(id, channel, signaller) {
         this.id = id;
+        this.channel = channel;
         this.signaller = signaller; // This is our class wrapped socket. Not socket.io socket
-        this.initiated = false;
         this.offered = false;
         this.answered = false;
         this.conn = null;
@@ -587,16 +587,9 @@ class Peer {
             this.conn.addTrack(audioTracks[0], localAudioStream);
         }
 
-        // Use arrow function so that 'this' is available in class methods
-        this.conn.addEventListener('icecandidate', (event) => {
-            this.handleIceCandidates(event);
-        });
-        this.conn.addEventListener('iceconnectionstatechange', (event) => {
-            this.handleConnectionChange(event);
-        });
-        this.conn.addEventListener('track', (event) => {
-            this.gotRemoteMediaStream(event);
-        });
+        this.conn.addEventListener('icecandidate', this.handleIceCandidates.bind(this));
+        this.conn.addEventListener('iceconnectionstatechange', this.handleConnectionChange.bind(this));
+        this.conn.addEventListener('track', this.gotRemoteMediaStream.bind(this));
 
         // Set up additional data channel to pass messages peer-to-peer
         // There is a separate channel for sending and receiving
@@ -682,7 +675,8 @@ class Peer {
     handleIceCandidates(event) {
         if (event.candidate) {
             this.signaller.socket.emit('candidate', {
-                channel: this.id,
+                channel: this.channel,
+                recipient: this.id,
                 candidate: event.candidate
             });
             trace(`Sent ICE candidate to ${this.id}.`);
@@ -927,7 +921,7 @@ class Signaller {
         this.port = port;
         this.privateChannel = null;
         this.channels = [];
-        this.peers = {};
+        this.channelPeers = {};
 
         this.socket = socketCluster.connect({
             hostname: hostname,
@@ -959,26 +953,27 @@ class Signaller {
             trace(`Joined channel ${obj.channel}.`);
 
             this.channels.push(obj.channel);
+            this.channelPeers[obj.channel] = {};
         });
 
         this.socket.on('full', (obj) => {
             console.warn(`Channel ${obj.channel} is full.`);
         });
+
+        // Bind this since its called in a different class
+        this.disconnected = this.disconnected.bind(this);
     }
 
     async handlePrivateChannel(obj) {
-        trace(`Private message from ${obj.sender}:`);
-        console.log(obj);
-
         // Ignore anything malformed
-        if (!obj.action || !obj.sender) {
+        if (!obj.action || !obj.channel || !obj.sender) {
             console.warn('Malformed channel message.');
             console.log(obj);
             return;
         }
 
         if (obj.action === 'offer') {
-            let peer = this.peers[obj.sender];
+            let peer = this.channelPeers[obj.channel][obj.sender];
 
             trace(`Offer received from ${obj.sender}:`);
             console.dir(obj.offer);
@@ -988,8 +983,8 @@ class Signaller {
                 console.warn(`Peer already existed at offer.`);
                 peer.reconnect();
             } else {
-                peer = new Peer(obj.sender, this);
-                this.peers[peer.id] = peer;
+                peer = new Peer(obj.sender, obj.channel, this);
+                this.channelPeers[obj.channel][peer.id] = peer;
             }
 
             peer.answered = true;
@@ -1002,13 +997,17 @@ class Signaller {
             answer.sdp = transformSdp(answer.sdp);
             await peer.conn.setLocalDescription(answer);
 
-            this.socket.emit('answer', { channel: obj.sender, answer: answer });
+            this.socket.emit('answer', {
+                channel: obj.channel,
+                recipient: obj.sender,
+                answer: answer
+            });
 
             // Restore any cached ICE candidates
             peer.uncacheICECandidates();
 
         } else if (obj.action === 'answer') {
-            let peer = this.peers[obj.sender];
+            let peer = this.channelPeers[obj.channel][obj.sender];
 
             // Make sure we're expecting an answer
             if (!(peer && peer.offered)) {
@@ -1025,7 +1024,7 @@ class Signaller {
             peer.uncacheICECandidates();
 
         } else if (obj.action === 'candidate') {
-            let peer = this.peers[obj.sender];
+            let peer = this.channelPeers[obj.channel][obj.sender];
 
             // Make sure we're expecting candidates
             if (!(peer && (peer.offered || peer.answered))) {
@@ -1065,7 +1064,7 @@ class Signaller {
         }
 
         if (obj.action === 'join') {
-            let peer = this.peers[obj.sender];
+            let peer = this.channelPeers[obj.channel][obj.sender];
 
             trace(`'${obj.sender}' joined.`);
 
@@ -1075,8 +1074,8 @@ class Signaller {
                 peer.disconnect();
             }
 
-            peer = new Peer(obj.sender, this);
-            this.peers[peer.id] = peer;
+            peer = new Peer(obj.sender, obj.channel, this);
+            this.channelPeers[obj.channel][peer.id] = peer;
             peer.offered = true;
 
             trace(`createOffer to ${obj.sender} started.`);
@@ -1089,19 +1088,20 @@ class Signaller {
             await peer.conn.setLocalDescription(offer);
 
             this.socket.emit('offer', {
-                channel: peer.id,
+                channel: obj.channel,
+                recipient: peer.id,
                 offer: offer
             });
 
         } else if (obj.action === 'leave') {
-            let peer = this.peers[obj.sender];
+            let peer = this.channelPeers[obj.channel][obj.sender];
 
             if (peer) {
                 trace(`${obj.sender} left ${obj.channel}.`);
                 peer.disconnect();
             }
 
-            this.peers[obj.sender] = null;
+            this.channelPeers[obj.channel][obj.sender] = null;
 
         } else {
             console.warn(`Unrecognized channel action: ${obj.action}`);
@@ -1131,6 +1131,14 @@ class Signaller {
         trace(`Unsubscribing from channel ${channel}...`);
         this.socket.unwatch(channel);
         this.socket.unsubscribe(channel);
+
+        trace(`Disconnecting from peers...`);
+        for (let id in this.channelPeers[channel]) {
+            this.channelPeers[channel][id].disconnect();
+        }
+        delete this.channelPeers[channel];
+
+        trace(`Left ${channel}.`);
     }
 
     leaveAllChannels() {
@@ -1140,8 +1148,13 @@ class Signaller {
     }
 
     disconnected(id) {
-        this.peers[id] = null;
-        trace(`Removed ${id} from peer list.`);
+        for (let channel in this.channelPeers) {
+            trace(channel);
+            if (this.channelPeers[channel][id]) {
+                trace(`Removed ${id} from ${channel}.`)
+                delete this.channelPeers[channel][id];
+            }
+        }
     }
 }
 
