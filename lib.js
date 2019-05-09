@@ -926,7 +926,7 @@ class Signaller {
         this.socket = socketCluster.connect({
             hostname: hostname,
             port: port,
-            secure: false
+            secure: true
         });
 
         this.socket.on('error', (err) => {
