@@ -26,7 +26,7 @@
   },
   "devDependencies": {
     "cmake-js": "^5.2.0",
-    "electron": "^4.2.0",
+    "electron": "^5.0.1",
     "nan": "^2.13.2"
   },
   "nodemonConfig": {
@@ -34,7 +34,7 @@
   },
   "cmake-js": {
     "runtime": "electron",
-    "runtimeVersion": "4.1.4",
+    "runtimeVersion": "5.0.1",
     "arch": "x64"
   }
 }
