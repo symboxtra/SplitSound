@@ -1,18 +1,41 @@
-const { app, BrowserWindow } = require('electron')
-const url = require('url')
-const path = require('path')
+const { app, protocol, BrowserWindow } = require('electron');
+const createProtocol = require('./protocol.js');
+const url = require('url');
+const path = require('path');
 
-let win;
+const SCHEME_NAME = 'app';
 
-function createWindow() {
-    win = new BrowserWindow({ width: 1000, height: 700 });
+// Standard scheme must be registered before the app is ready
+// protocol.registerStandardSchemes(['app'], { secure: true });
+protocol.registerSchemesAsPrivileged([{
+    scheme: SCHEME_NAME,
+    standard: true,
+    secure: true,
+    bypassCSP: false,
+    allowServiceWorkers: true,
+    supportFetchAPI: true,
+    corsEnabled: false
+}]);
+
+function createWindow(loadPath) {
+    let win = new BrowserWindow({
+        webPreferences: {
+            nodeIntegration: true
+        },
+        width: 1000,
+        height: 700
+    });
+
     win.loadURL(url.format({
-        pathname: path.join(__dirname, '../index.html'),
-        protocol: 'file:',
+        pathname: loadPath,
+        protocol: SCHEME_NAME,
         slashes: true
     }));
 
     win.webContents.openDevTools();
 }
 
-app.on('ready', createWindow)
+app.on('ready', async () => {
+    createProtocol(SCHEME_NAME);
+    createWindow('./index.html');
+});
