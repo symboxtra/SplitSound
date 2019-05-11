@@ -2,7 +2,7 @@
   "name": "splitsound",
   "version": "1.0.0",
   "description": "",
-  "main": "main.js",
+  "main": "electron/main.js",
   "scripts": {
     "install": "cmake-js compile",
     "start": "electron .",

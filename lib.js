@@ -1149,7 +1149,6 @@ class Signaller {
 
     disconnected(id) {
         for (let channel in this.channelPeers) {
-            trace(channel);
             if (this.channelPeers[channel][id]) {
                 trace(`Removed ${id} from ${channel}.`)
                 delete this.channelPeers[channel][id];
