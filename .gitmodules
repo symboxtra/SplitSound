@@ -1,3 +1,3 @@
-[submodule "cpp/HulaLoop"]
-	path = cpp/HulaLoop
+[submodule "electron/HulaLoop"]
+	path = electron/HulaLoop
 	url = https://github.com/symboxtra/HulaLoop
