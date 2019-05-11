@@ -227,15 +227,15 @@ visualizerCanvas.addEventListener('dblclick', () => {
  * Stream related functions                       *
 ***************************************************/
 
-function resetConnection(socket) {
+function resetConnection(signaller) {
     // AudioContext gets suspended if created before
     // a user interaction https://goo.gl/7K7WLu
     // This will be called by 'None' receiver
     context.resume();
 
-    // Leave any old rooms
-    if (socket) {
-        socket.leaveAllRooms();
+    // Leave any old channels
+    if (signaller) {
+        signaller.leaveAllChannels();
     }
 
     // Reset constraints
@@ -520,10 +520,10 @@ function trace(text) {
  * WebRTC connections                             *
 ***************************************************/
 class Peer {
-    constructor(id, socket) {
+    constructor(id, channel, signaller) {
         this.id = id;
-        this.socket = socket; // This is our class wrapped socket. Not socket.io socket
-        this.initiated = false;
+        this.channel = channel;
+        this.signaller = signaller; // This is our class wrapped socket. Not socket.io socket
         this.offered = false;
         this.answered = false;
         this.conn = null;
@@ -587,16 +587,9 @@ class Peer {
             this.conn.addTrack(audioTracks[0], localAudioStream);
         }
 
-        // Use arrow function so that 'this' is available in class methods
-        this.conn.addEventListener('icecandidate', (event) => {
-            this.handleIceCandidates(event);
-        });
-        this.conn.addEventListener('iceconnectionstatechange', (event) => {
-            this.handleConnectionChange(event);
-        });
-        this.conn.addEventListener('track', (event) => {
-            this.gotRemoteMediaStream(event);
-        });
+        this.conn.addEventListener('icecandidate', this.handleIceCandidates.bind(this));
+        this.conn.addEventListener('iceconnectionstatechange', this.handleConnectionChange.bind(this));
+        this.conn.addEventListener('track', this.gotRemoteMediaStream.bind(this));
 
         // Set up additional data channel to pass messages peer-to-peer
         // There is a separate channel for sending and receiving
@@ -674,14 +667,18 @@ class Peer {
         this.cleanup();
 
         // TODO: This is meh coupling
-        this.socket.disconnected(this.id);
+        this.signaller.disconnected(this.id);
         trace(`Disconnected from ${this.id}.`);
     }
 
     // Connects with new peer candidate.
     handleIceCandidates(event) {
         if (event.candidate) {
-            this.socket.socket.emit('candidate', event.candidate, this.id);
+            this.signaller.socket.emit('candidate', {
+                channel: this.channel,
+                recipient: this.id,
+                candidate: event.candidate
+            });
             trace(`Sent ICE candidate to ${this.id}.`);
         }
     }
@@ -916,137 +913,128 @@ function transformSdp(sdp) {
 
 
 /**************************************************
- * Socket.io signaling                            *
+ * SocketCluster signaling                        *
 ***************************************************/
-class Socket {
-    constructor(ip, port) {
-        this.ip = ip;
+class Signaller {
+    constructor(hostname, port) {
+        this.hostname = hostname;
         this.port = port;
-        this.rooms = [];
-        this.peers = {};
+        this.privateChannel = null;
+        this.channels = [];
+        this.channelPeers = {};
 
-        this.socket = io.connect(`${this.ip}:${this.port}`);
-        trace(`Created socket.`);
-        console.dir(this.socket);
-
-        // This is emitted when this socket successfully creates
-        this.socket.on('created', (room, socketId) => {
-            trace(`${socketId} successfully created ${room}.`);
-            socketIdElem.innerHTML = this.socket.id;
-
-            this.rooms.push(room);
+        this.socket = socketCluster.connect({
+            hostname: hostname,
+            port: port,
+            secure: true
         });
 
-        // This is emitted when this socket successfully joins
-        this.socket.on('joined', (room, socketId) => {
-            trace(`${socketId} successfully joined ${room}.`);
-            socketIdElem.innerHTML = this.socket.id;
-
-            this.rooms.push(room);
+        this.socket.on('error', (err) => {
+            console.error(err);
         });
 
-        this.socket.on('full', (room) => {
-            console.warn(`Room ${room} is full.`);
+        this.socket.on('connect', () => {
+            trace(`Connected to signalling server with ID: ${this.socket.id}`);
+
+            trace(`Subscribing to private channel ${this.socket.id}...`);
+            this.privateChannel = this.socket.subscribe(this.socket.id);
+            this.privateChannel.watch(this.handlePrivateChannel.bind(this));
         });
 
-        this.socket.on('ipaddr', (ipaddr) => {
-            trace(`Server IP address: ${ipaddr}`);
-        });
-
-        // This is emitted when someone else joins
-        this.socket.on('join', async (socketId) => {
-            // Have to ignore our own join
-            if (socketId === this.socket.id) {
-                return;
+        this.socket.on('subscribeStateChange', (obj) => {
+            if (obj.newState === 'subscribed') {
+                trace(`Subscribed to ${obj.channel}.`);
+            } else {
+                trace(`Subscription state change for channel ${obj.channel}: ${obj.oldState} => ${obj.newState}`)
             }
-
-            let peer = this.peers[socketId];
-
-            trace(`'${socketId}' joined.`);
-
-            // Connection already existed
-            // Close old one
-            if (peer) {
-                this.handleDisconnect(peer.id);
-            }
-
-            peer = new Peer(socketId, this);
-            this.peers[peer.id] = peer;
-            peer.offered = true;
-
-            trace(`createOffer to ${socketId} started.`);
-            let offer = await peer.conn.createOffer(offerOptions);
-            offer.sdp = transformSdp(offer.sdp);
-
-            trace(`Outgoing offer sdp:`);
-            console.log(offer.sdp);
-
-            await peer.conn.setLocalDescription(offer);
-
-            this.socket.emit('offer', offer, peer.id);
         });
 
-        this.socket.on('offer', async (offer, socketId) => {
-            let peer = this.peers[socketId];
+        this.socket.on('joined', (obj) => {
+            trace(`Joined channel ${obj.channel}.`);
 
-            trace(`Offer received from ${socketId}:`);
-            console.dir(offer);
+            this.channels.push(obj.channel);
+            this.channelPeers[obj.channel] = {};
+        });
+
+        this.socket.on('full', (obj) => {
+            console.warn(`Channel ${obj.channel} is full.`);
+        });
+
+        // Bind this since its called in a different class
+        this.disconnected = this.disconnected.bind(this);
+    }
+
+    async handlePrivateChannel(obj) {
+        // Ignore anything malformed
+        if (!obj.action || !obj.channel || !obj.sender) {
+            console.warn('Malformed channel message.');
+            console.log(obj);
+            return;
+        }
+
+        if (obj.action === 'offer') {
+            let peer = this.channelPeers[obj.channel][obj.sender];
+
+            trace(`Offer received from ${obj.sender}:`);
+            console.dir(obj.offer);
 
             // Peer might exist because of ICE candidates
             if (peer) {
                 console.warn(`Peer already existed at offer.`);
                 peer.reconnect();
             } else {
-                peer = new Peer(socketId, this);
-                this.peers[peer.id] = peer;
+                peer = new Peer(obj.sender, obj.channel, this);
+                this.channelPeers[obj.channel][peer.id] = peer;
             }
 
             peer.answered = true;
 
             trace(`Incoming offer sdp:`);
-            console.log(offer.sdp);
+            console.log(obj.offer.sdp);
 
-            await peer.conn.setRemoteDescription(offer);
+            await peer.conn.setRemoteDescription(obj.offer);
             let answer = await peer.conn.createAnswer(offerOptions);
             answer.sdp = transformSdp(answer.sdp);
             await peer.conn.setLocalDescription(answer);
 
-            this.socket.emit('answer', answer, socketId);
+            this.socket.emit('answer', {
+                channel: obj.channel,
+                recipient: obj.sender,
+                answer: answer
+            });
 
             // Restore any cached ICE candidates
             peer.uncacheICECandidates();
-        });
 
-        this.socket.on('answer', async (answer, socketId) => {
-            let peer = this.peers[socketId];
+        } else if (obj.action === 'answer') {
+            let peer = this.channelPeers[obj.channel][obj.sender];
 
             // Make sure we're expecting an answer
             if (!(peer && peer.offered)) {
-                console.warn(`Unexpected answer from ${socketId} to ${this.socket.id}.`);
+                console.warn(`Unexpected answer from ${obj.sender} to ${this.socket.id}.`);
                 return;
             }
 
-            trace(`Answer received from ${socketId}:`);
-            console.dir(answer.sdp);
+            trace(`Answer received from ${obj.sender}:`);
+            console.dir(obj.answer.sdp);
 
-            await peer.conn.setRemoteDescription(answer);
+            await peer.conn.setRemoteDescription(obj.answer);
 
             // Restore any cached ICE candidates
             peer.uncacheICECandidates();
-        });
 
-        this.socket.on('candidate', async (candidate, ownerId) => {
-            let peer = this.peers[ownerId];
+        } else if (obj.action === 'candidate') {
+            let peer = this.channelPeers[obj.channel][obj.sender];
 
             // Make sure we're expecting candidates
             if (!(peer && (peer.offered || peer.answered))) {
-                console.warn(`Unexpected ICE candidates from ${ownerId} to ${this.socket.id}.`);
+                console.warn(`Unexpected ICE candidates from ${obj.sender} to ${this.socket.id}.`);
                 return;
             }
 
-            trace(`Received ICE candidate for ${ownerId}.`);
+            trace(`Received ICE candidate for ${obj.sender}.`);
 
-            let iceCandidate = new RTCIceCandidate(candidate);
+            let iceCandidate = new RTCIceCandidate(obj.candidate);
 
             // Cache ICE candidates if the connection isn't ready yet
             if (peer.conn && peer.conn.remoteDescription && peer.conn.remoteDescription.type) {
@@ -1055,49 +1043,117 @@ class Socket {
                 trace(`Cached ICE candidate`);
                 peer.iceCandidates.push(iceCandidate);
             }
-        });
 
-        this.socket.on('leave', (room, socketId) => {
-            let peer = this.peers[socketId];
+        } else {
+            console.warn(`Unrecognized private channel action: ${obj.action}`);
+            return;
+        }
+    }
 
+    async handleChannel(obj) {
+        // Ignore anything malformed
+        if (!obj.action || !obj.channel || !obj.sender) {
+            console.warn('Malformed channel message.');
+            console.log(obj);
+            return;
+        }
+
+        // Ignore our own messages
+        if (obj.sender === this.socket.id) {
+            return;
+        }
+
+        if (obj.action === 'join') {
+            let peer = this.channelPeers[obj.channel][obj.sender];
+
+            trace(`'${obj.sender}' joined.`);
+
+            // Connection already existed
+            // Close old one
             if (peer) {
-                trace(`${socketId} left ${room}.`);
                 peer.disconnect();
             }
 
-            this.peers[socketId] = null;
-        });
+            peer = new Peer(obj.sender, obj.channel, this);
+            this.channelPeers[obj.channel][peer.id] = peer;
+            peer.offered = true;
+
+            trace(`createOffer to ${obj.sender} started.`);
+            let offer = await peer.conn.createOffer(offerOptions);
+            offer.sdp = transformSdp(offer.sdp);
+
+            trace(`Outgoing offer sdp:`);
+            console.log(offer.sdp);
+
+            await peer.conn.setLocalDescription(offer);
+
+            this.socket.emit('offer', {
+                channel: obj.channel,
+                recipient: peer.id,
+                offer: offer
+            });
+
+        } else if (obj.action === 'leave') {
+            let peer = this.channelPeers[obj.channel][obj.sender];
+
+            if (peer) {
+                trace(`${obj.sender} left ${obj.channel}.`);
+                peer.disconnect();
+            }
+
+            this.channelPeers[obj.channel][obj.sender] = null;
+
+        } else {
+            console.warn(`Unrecognized channel action: ${obj.action}`);
+            return;
+        }
     }
 
-    joinRoom(room) {
-        trace(`Entering room '${room}'...`);
-        this.socket.emit('join', room);
+    joinChannel(channel) {
+        if (this.channels.includes(channel)) {
+            console.warn(`Already subscribed to ${channel}. Leaving first...`);
+            this.leaveChannel(channel);
+        }
+
+        this.socket.emit('join', { channel: channel });
+
+        trace(`Subscribing to channel ${channel}...`);
+        this.socket.subscribe(channel);
+        this.socket.watch(channel, this.handleChannel.bind(this));
     }
 
-    leaveRoom(room) {
-        trace(`Leaving room ${room}...`);
-        this.socket.emit('leave', room, this.socket.id);
+    leaveChannel(channel) {
+        if (!this.channels.includes(channel)) {
+            trace(`Not subscribed to ${channel}`);
+            return;
+        }
 
-        this.rooms = this.rooms.filter((val) => val !== room);
+        trace(`Unsubscribing from channel ${channel}...`);
+        this.socket.unwatch(channel);
+        this.socket.unsubscribe(channel);
+
+        trace(`Disconnecting from peers...`);
+        for (let id in this.channelPeers[channel]) {
+            this.channelPeers[channel][id].disconnect();
+        }
+        delete this.channelPeers[channel];
+
+        trace(`Left ${channel}.`);
     }
 
-    leaveAllRooms() {
-        this.rooms.forEach((val) => {
-            this.leaveRoom(val);
+    leaveAllChannels() {
+        this.channels.forEach((val) => {
+            this.leaveChannel(val);
         });
     }
 
     disconnected(id) {
-        this.peers[id] = null;
-        trace(`Removed ${id} from peer list.`);
-    }
-}
-
-// Not in use yet
-class Room {
-    constructor(name) {
-        this.name = name;
-        this.peers = {};
+        for (let channel in this.channelPeers) {
+            if (this.channelPeers[channel][id]) {
+                trace(`Removed ${id} from ${channel}.`)
+                delete this.channelPeers[channel][id];
+            }
+        }
     }
 }
 

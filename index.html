@@ -47,12 +47,12 @@
     <h2>Remote Connections:</h2>
     <div id="remoteMedia"></div>
 
-    <script type="text/javascript" src="./node_modules/socket.io-client/dist/socket.io.js"></script>
+    <script type="text/javascript" src="./node_modules/socketcluster-client/socketcluster.min.js"></script>
     <script type="text/javascript" src="./node_modules/webrtc-adapter/out/adapter.js"></script>
     <script type="text/javascript" src="./lib.js"></script>
     <script type="text/javascript">
         let deviceSelect = document.getElementById('deviceSelectOptions');
-        let socket = new Socket('https://signals.symboxtra.dynu.net', 443);
+        let signaller = new Signaller('goog.symboxtra.dynu.net', 443);
         createAudioContext(44100.0);
 
         // Fill the device selector
@@ -60,7 +60,7 @@
 
         // Start connection
         document.getElementById('connectButton').addEventListener('click', async () => {
-            resetConnection(socket);
+            resetConnection(signaller);
 
             let sel = deviceSelect[deviceSelect.selectedIndex];
             let owner = sel.getAttribute('data-owner') || '';
@@ -89,7 +89,7 @@
             }
 
             let room = document.getElementById('connectRoom').value;
-            socket.joinRoom(room);
+            signaller.joinChannel(room);
         });
 
         document.addEventListener('keyup', (e) => {
