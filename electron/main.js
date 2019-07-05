@@ -6,7 +6,6 @@ const path = require('path');
 const SCHEME_NAME = 'app';
 
 // Standard scheme must be registered before the app is ready
-// protocol.registerStandardSchemes(['app'], { secure: true });
 protocol.registerSchemesAsPrivileged([{
     scheme: SCHEME_NAME,
     standard: true,

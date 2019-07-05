@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <title>WebRTC Streaming</title>
-    <link rel="stylesheet" href="./styles.css">
+    <link rel="stylesheet" href="styles.css">
 </head>
 
 <body>
@@ -47,39 +47,52 @@
     <h2>Remote Connections:</h2>
     <div id="remoteMedia"></div>
 
-    <script type="text/javascript" src="./node_modules/socketcluster-client/socketcluster.min.js"></script>
-    <script type="text/javascript" src="./node_modules/webrtc-adapter/out/adapter.js"></script>
-    <script type="text/javascript" src="./lib.js"></script>
     <script type="text/javascript">
+        // Drop here so it's globally accessible
+        function trace(text) {
+            text = text.trim();
+            const now = (performance.now() / 1000).toFixed(3);
+
+            console.log(now, text);
+        }
+    </script>
+    <script type="module" src="./node_modules/socketcluster-client/socketcluster.min.js"></script>
+    <script type="module" src="./node_modules/webrtc-adapter/out/adapter.js"></script>
+    <script type="module">
+        import * as rando from './lib.js';
+        import * as dom from './js/dom.js';
+        import { am, createAudioManager } from './js/audio.js';
+        import settings from './js/settings.js';
+        import Signaller from './js/signaller.js';
+
         let deviceSelect = document.getElementById('deviceSelectOptions');
         let signaller = new Signaller('goog.symboxtra.dynu.net', 443);
-        createAudioContext(44100.0);
 
         // Fill the device selector
-        updateDeviceList(deviceSelect);
+        dom.updateDeviceList(deviceSelect);
 
         // Start connection
         document.getElementById('connectButton').addEventListener('click', async () => {
-            resetConnection(signaller);
+            rando.resetConnection(signaller);
 
             let sel = deviceSelect[deviceSelect.selectedIndex];
             let owner = sel.getAttribute('data-owner') || '';
 
             switch (owner) {
                 case 'hulaloop':
-                    await setupLocalMediaStreamFromHulaLoop(sel.value);
+                    await am.setupLocalMediaStreamFromHulaLoop(sel.value);
                     break;
                 case 'browser':
-                    await setupLocalMediaStreams(sel.value);
+                    await rando.setupLocalMediaStreams(sel.value);
                     break;
                 case 'html':
                     switch (sel.value) {
                         case 'file':
-                            await setupLocalMediaStreamsFromFile('./test_file_left_panned_sweep.mp3');
+                            await rando.setupLocalMediaStreamsFromFile('./test_file_left_panned_sweep.mp3');
                             break;
                         case 'none':
                         default:
-                            enableReceiverOnly();
+                            settings.enableReceiverOnly();
                             break;
                     }
                     break;
@@ -92,6 +105,14 @@
             signaller.joinChannel(room);
         });
 
+        // Visualizer selection
+        dom.visualizerOpt.addEventListener('change', (e) => {
+            if (am.visualizer) {
+                am.visualizer.setMode(e.target.value);
+            }
+        });
+
+        // Refresh and dev tools
         document.addEventListener('keyup', (e) => {
             if (e.which === 123) {
                 if (settings.isElectron) {
@@ -101,6 +122,29 @@
                 location.reload();
             }
         });
+
+        // Expose for testing
+        window.am = am;
+        window.createAudioManager = createAudioManager;
+        window.signaller = signaller;
+        window.rando = rando;
+
+        class HulaLoopWorkletNode extends AudioWorkletNode {
+            constructor(context) {
+                super(context, 'hulaloop-worklet-processor');
+            }
+        }
+
+        console.log(am.context);
+
+        let context = new AudioContext();
+        context.audioWorklet.addModule('work.js').then(() => {
+            let node = new HulaLoopWorkletNode(context);
+            node.port.onmessage = (event) => {
+                console.log('yooo');
+                console.log(event);
+            }
+        }).catch((e) => { console.dir(e) });
 
     </script>
 </body>
