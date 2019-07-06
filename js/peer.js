@@ -18,7 +18,6 @@ class Peer {
         this.remoteStream = null;
         this.titleElem = null;
         this.audioElem = null;
-        this.videoElem = null;
         this.audioNode = null;
         this.gainNode = null;
         this.muteButton = null;
@@ -28,20 +27,13 @@ class Peer {
 
         // Handle track setup
         let localAudioStream = am.outgoingRemoteStreamNode.stream;
-        let videoTracks = null;
         let audioTracks = null;
         if (settings.receiverOnly === false) {
-            if (settings.showVideo && dom.localVideoStream) {
-                videoTracks = dom.localVideoStream.getVideoTracks();
-            }
             audioTracks = localAudioStream.getAudioTracks();
 
             trace(`Audio tracks:`);
             console.dir(audioTracks);
 
-            if (settings.showVideo && videoTracks.length > 0) {
-                trace(`Using video device: ${videoTracks[0].label}.`);
-            }
             if (audioTracks.length > 0) {
                 trace(`Using audio device: ${audioTracks[0].label}.`);
             }
@@ -59,15 +51,8 @@ class Peer {
         // Edge doesn't have addTransceiver yet...
         if (settings.receiverOnly && this.conn.addTransceiver) {
             this.conn.addTransceiver('audio', { direction: direction });
-            if (settings.showVideo) {
-                this.conn.addTransceiver('video', { direction: direction });
-            }
         }
 
-        // Add local streams to connection
-        if (settings.receiverOnly === false && settings.showVideo && videoTracks[0]) {
-            this.conn.addTrack(videoTracks[0], dom.localVideoStream);
-        }
         if (settings.receiverOnly === false && audioTracks[0]) {
             this.conn.addTrack(audioTracks[0], localAudioStream);
         }
@@ -116,10 +101,6 @@ class Peer {
             this.gainNode.disconnect();
         }
 
-        if (this.videoElem) {
-            this.videoElem.remove();
-        }
-
         if (this.muteButton) {
             this.muteButton.remove();
         }
@@ -156,7 +137,9 @@ class Peer {
         trace(`Disconnected from ${this.id}.`);
     }
 
-    // Connects with new peer candidate.
+    /**
+     * Connects with new peer candidate.
+     */
     handleIceCandidates(event) {
         if (event.candidate) {
             this.signaller.socket.emit('candidate', {
@@ -168,7 +151,9 @@ class Peer {
         }
     }
 
-    // Logs changes to the connection state.
+    /**
+     * Logs changes to the connection state.
+     */
     handleConnectionChange(event) {
         trace(`ICE state changed to: ${event.target.iceConnectionState}.`);
 
@@ -193,15 +178,15 @@ class Peer {
         this.iceCandidates = [];
     }
 
-    // Handles remote MediaStream success by adding it as the remoteVideo src.
+    /**
+     * Handles remote MediaStream success by adding it as the remote src.
+     */
     gotRemoteMediaStream(event) {
         this.remoteStream = event.streams[0];
 
-        let videoTracks = this.remoteStream.getVideoTracks();
         let audioTracks = this.remoteStream.getAudioTracks();
 
-        // If we have a video stream and separate audio stream,
-        // we'll get multiple 'track' events
+        // We may get multiple 'track' events
         // Make sure the title only gets added once
         if (!this.titleElem) {
             this.titleElem = document.createElement('h3');
@@ -255,18 +240,6 @@ class Peer {
             // AudioContext gets suspended if created before
             // a user interaction https://goo.gl/7K7WLu
             am.context.resume();
-        }
-
-        // Do video if we should
-        if (settings.showVideo && videoTracks.length > 0) {
-            this.videoElem = document.createElement('video');
-            this.videoElem.classList.add('remoteVideo');
-            this.videoElem.autoplay = true;
-            this.videoElem.controls = true;
-            this.videoElem.muted = true;
-            this.videoElem.srcObject = this.remoteStream;
-
-            dom.remoteMedia.appendChild(this.videoElem);
         }
 
         trace(`Received remote stream from ${this.id}.`);

@@ -29,11 +29,6 @@ function resetConnection(signaller) {
         localStreamNode.disconnect();
         localStreamNode = null;
     }
-
-    if (dom.localVideo) {
-        dom.setLocalVideoStream(null);
-        dom.localVideo.srcObject = null;
-    }
 }
 
 /**
@@ -55,13 +50,6 @@ async function setupLocalMediaStreams(deviceId) {
     // Default to the simplest option
     settings.mediaStreamConstraints.audio = true;
 
-    if (settings.showVideo) {
-        // Can't do screen capture without screen audio
-        settings.mediaStreamConstraints.video = true;
-    } else {
-        settings.mediaStreamConstraints.video = false;
-    }
-
     if (deviceId) {
         settings.mediaStreamConstraints.deviceId = deviceId;
     }
@@ -69,10 +57,6 @@ async function setupLocalMediaStreams(deviceId) {
     return new Promise((resolve, reject) => {
         navigator.mediaDevices.getUserMedia(settings.mediaStreamConstraints)
         .then((stream) => {
-            if (settings.showVideo) {
-                gotLocalVideoMediaStream(stream);
-            }
-
             gotLocalMediaStream(stream);
             resolve();
         })
@@ -98,12 +82,6 @@ async function setupLocalMediaStreamsFromFile(filepath) {
             return;
         }
 
-        if (settings.showVideo) {
-            // This will grab video and audio.
-            // We'll overwrite the audio once it's done
-            await setupLocalMediaStreams();
-        }
-
         // Attach file to audio element
         dom.localAudio.src = filepath;
         dom.localAudio.classList.remove('hidden');
@@ -113,14 +91,8 @@ async function setupLocalMediaStreamsFromFile(filepath) {
 }
 
 function gotLocalMediaStream(mediaStream) {
-    let videoTracks = mediaStream.getVideoTracks();
-    if (videoTracks.length > 0) {
-        gotLocalVideoMediaStream(mediaStream);
-    }
 
     // Disconnect our old one if we get a new one
-    // This will get called twice if we want a video stream
-    // and a different audio source
     if (localStreamNode) {
         localStreamNode.disconnect();
     }
@@ -128,16 +100,9 @@ function gotLocalMediaStream(mediaStream) {
     console.dir(mediaStream);
 
     localStreamNode = am.context.createMediaStreamSource(mediaStream);
-    localStreamNode.connect(outgoingRemoteGainNode);
+    localStreamNode.connect(am.outgoingRemoteGainNode);
 
     trace('Connected localStreamNode.');
-}
-
-function gotLocalVideoMediaStream(mediaStream) {
-    dom.setLocalVideoStream(mediaStream);
-    localVideo.srcObject = mediaStream;
-
-    trace('Received local video stream.');
 }
 
 export {

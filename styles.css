@@ -21,14 +21,6 @@ button {
     display: none;
 }
 
-.localVideo {
-    max-width: 75%;
-}
-
-.remoteVideo {
-    max-width: 75%;
-}
-
 .inputOptions {
     padding: 10px;
 }

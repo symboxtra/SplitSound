@@ -17,14 +17,6 @@ const deviceSelectElem = document.getElementById('deviceSelectOptions');
 // Define media elements.
 const localMedia = document.getElementById('localMedia');
 let localAudio = document.getElementById('localAudio');
-const localVideo = document.getElementById('localVideo');
-
-let localVideoStream = null;
-
-// Hide video elements
-if (settings.showVideo === false) {
-    hideVideoElements();
-}
 
 // Visualizer canvas
 const visualizerOpt = document.getElementById('vizualizerOptions');
@@ -42,16 +34,6 @@ visualizerCanvas.addEventListener('dblclick', () => {
     }
 });
 
-function hideVideoElements() {
-    localVideo.style.display = 'none';
-
-    // Hide all remote video elements
-    let remoteVideos = document.getElementsByClassName('remoteVideo');
-    for (let i = 0; i < remoteVideos.length; i++) {
-        remoteVideos[i].style.display = 'none';
-    }
-}
-
 function toggleElectronOptions() {
     // Hide elements with the electronOnly class
     let elems = document.getElementsByClassName('electronOnly');
@@ -66,14 +48,6 @@ function toggleElectronOptions() {
  */
 function setLocalAudio(elem) {
     localAudio = elem;
-}
-
-/**
- * Hack for the need to replace the localVideoStream
- * every device switch
- */
-function setLocalVideoStream(stream) {
-    localVideoStream = stream;
 }
 
 function createDeviceOption(name, value, owner) {
@@ -132,16 +106,12 @@ export {
     deviceSelectElem,
     localMedia,
     localAudio,
-    localVideo,
-    localVideoStream,
     visualizerOpt,
     visualizerCanvas,
     vizCtx,
 
-    hideVideoElements,
     toggleElectronOptions,
     setLocalAudio,
-    setLocalVideoStream,
     createDeviceOption,
     updateDeviceList
 }

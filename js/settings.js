@@ -17,17 +17,12 @@ const baseMediaStreamConstraints = {
             googNoiseReduction: false,
         }
     },
-    video: {
-        mandatory: {
-            chromeMediaSource: 'desktop'
-        }
-    }
+    video: false
 };
 
 class Settings {
     constructor() {
         this.receiverOnly = false;
-        this.showVideo = false;
 
         this.showHulaloopDevices = true;
         this.showLocalDevices = true;
@@ -39,7 +34,7 @@ class Settings {
         // Set up RTCPeer offer options
         this.offerOptions = {
             offerToReceiveAudio: 1,
-            offerToReceiveVideo: (this.showVideo) ? 1 : 0,
+            offerToReceiveVideo: 0,
             voiceActivityDetection: false
         };
 

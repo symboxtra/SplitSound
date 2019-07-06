@@ -19,7 +19,7 @@ that is accessible by both transceivers.
 3. Enter a room name.
 4. Select the stream source.
 5. Press the ```Connect``` button.
-6. Audio/video should start to flow.
+6. Audio should start to flow.
 
 ### Browser Receiver ###
 Serve the required files over ```file://``` or HTTP to use them in the browser. This has been confirmed to work (some receiver only) in Chrome, FireFox, and Chrome Android.
@@ -37,9 +37,7 @@ Make sure to ```npm install``` or some of the dependencies won't exist.
 
 
 ### Notes ###
-- Video can be enabled in ```lib.js```. Flip ```showVideo``` to ```true```.
-- Linux and Mac have no support for capturing an audio stream. Uncomment line ~26 in ```lib.js``` if you want to transmit video from them.
-Left as is, they will still function as receivers.
+- Linux and Mac have no support for capturing an audio stream in the browser. They will still function as receivers.
 - Beware of the firewall when trying to reach the signaling server. Mine blocked traffic to it.
 The signaling server is setup to respond with 404 to any HTTP request. You can check if connection is possible in a browser; helpful in verifying connectivity.
 - Unmuting the ```Local``` audio element can be used to verify that the stream is actually capturing.
