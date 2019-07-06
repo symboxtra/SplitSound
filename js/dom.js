@@ -60,7 +60,7 @@ function createDeviceOption(name, value, owner) {
     return opt;
 }
 
-function updateDeviceList(elem) {
+function updateDeviceList(elem, permissionAttempted = false) {
     // Reset any old devices that we're responsible for
     let oldDevs = elem.getElementsByClassName('generated-device');
     for (let i = 0; i < oldDevs.length; i++) {
@@ -79,13 +79,29 @@ function updateDeviceList(elem) {
     if (settings.showLocalDevices) {
         navigator.mediaDevices.enumerateDevices()
         .then((devices) => {
+
             for (let dev of devices) {
                 // TODO: Setup output devices
                 if (dev.kind === 'audioinput') {
                     let name = dev.label;
                     if (name.length === 0) {
-                        // default, communications, or some hash
-                        // 14 is the length of communications
+
+                        if (!permissionAttempted) {
+                            // Request permission so that we can get proper device names
+                            navigator.mediaDevices.getUserMedia({ audio: true })
+                            .then(() => {
+                                updateDeviceList(elem, true);
+                            })
+                            .catch(() => {
+                                console.warn('Microphone permission denied.');
+                                updateDeviceList(elem, true);
+                            });
+
+                            return;
+                        }
+
+                        // deviceId should be default, communications, or some hash
+                        // Truncate, but not less than 'communications'
                         name = dev.deviceId.substring(0, 14);
                     }
                     let opt = createDeviceOption(`Browser - ${name}`, dev.deviceId, 'browser');
