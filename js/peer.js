@@ -215,7 +215,7 @@ class Peer {
             // Gain node for this stream only
             // Connected to gain node for all remote streams
             this.gainNode = am.context.createGain();
-            this.gainNode.connect(incomingRemoteGainNode);
+            this.gainNode.connect(am.incomingRemoteGainNode);
 
             this.audioNode = am.context.createMediaStreamSource(this.remoteStream);
             this.audioNode.connect(this.gainNode);
