@@ -42,7 +42,7 @@ async function setupLocalMediaStreams(deviceId) {
     am.context.resume();
 
     // Remove the constraints that exclude microphone
-    //delete settings.mediaStreamConstraints.audio.mandatory.chromeMediaSource;
+    delete settings.mediaStreamConstraints.audio.mandatory.chromeMediaSource;
 
     // Remove the constraints that turn off mic processing
     //delete settings.mediaStreamConstraints.audio.mandatory;
@@ -51,7 +51,8 @@ async function setupLocalMediaStreams(deviceId) {
     settings.mediaStreamConstraints.audio = true;
 
     if (deviceId) {
-        settings.mediaStreamConstraints.deviceId = deviceId;
+        settings.mediaStreamConstraints.audio = {}
+        settings.mediaStreamConstraints.audio.deviceId = deviceId;
     }
 
     return new Promise((resolve, reject) => {

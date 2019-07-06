@@ -1,4 +1,5 @@
 import { am } from './audio.js';
+import * as dom from './dom.js';
 import settings from './settings.js';
 
 /**************************************************
