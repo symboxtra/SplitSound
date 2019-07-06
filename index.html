@@ -141,7 +141,6 @@
         context.audioWorklet.addModule('work.js').then(() => {
             let node = new HulaLoopWorkletNode(context);
             node.port.onmessage = (event) => {
-                console.log('yooo');
                 console.log(event);
             }
         }).catch((e) => { console.dir(e) });

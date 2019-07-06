@@ -127,7 +127,7 @@ function gotLocalMediaStream(mediaStream) {
 
     console.dir(mediaStream);
 
-    localStreamNode = context.createMediaStreamSource(mediaStream);
+    localStreamNode = am.context.createMediaStreamSource(mediaStream);
     localStreamNode.connect(outgoingRemoteGainNode);
 
     trace('Connected localStreamNode.');
