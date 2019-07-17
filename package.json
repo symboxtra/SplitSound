@@ -21,12 +21,12 @@
   "dependencies": {
     "bindings": "^1.5.0",
     "socketcluster-client": "^14.2.2",
-    "webrtc-adapter": "^7.2.3"
+    "webrtc-adapter": "^7.2.6"
   },
   "devDependencies": {
-    "cmake-js": "^5.2.0",
-    "electron": "^5.0.1",
-    "nan": "^2.13.2"
+    "cmake-js": "^5.3.0",
+    "electron": "^5.0.6",
+    "nan": "^2.14.0"
   },
   "nodemonConfig": {
     "watch": "server.js"
