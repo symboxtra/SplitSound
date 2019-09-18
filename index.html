@@ -128,22 +128,6 @@
         window.signaller = signaller;
         window.rando = rando;
 
-        class HulaLoopWorkletNode extends AudioWorkletNode {
-            constructor(context) {
-                super(context, 'hulaloop-worklet-processor');
-            }
-        }
-
-        console.log(am.context);
-
-        let context = new AudioContext();
-        context.audioWorklet.addModule('work.js').then(() => {
-            let node = new HulaLoopWorkletNode(context);
-            node.port.onmessage = (event) => {
-                console.log(event);
-            }
-        }).catch((e) => { console.dir(e) });
-
     </script>
 </body>
 
