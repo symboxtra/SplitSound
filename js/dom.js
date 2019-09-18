@@ -60,12 +60,54 @@ function createDeviceOption(name, value, owner) {
     return opt;
 }
 
-function updateDeviceList(elem, permissionAttempted = false) {
+async function requestDevicePermissions() {
+    try {
+        await navigator.mediaDevices.getUserMedia({ audio: true});
+        return true;
+    } catch(e) {
+        console.warn('Microphone permission denied.');
+        return false;
+    }
+}
+
+async function updateDeviceList(elem) {
     // Reset any old devices that we're responsible for
     let oldDevs = elem.getElementsByClassName('generated-device');
     for (let i = 0; i < oldDevs.length; i++) {
-        console.log(oldDevs[i]);
         oldDevs[i].remove();
+    }
+
+    if (settings.showLocalDevices) {
+        let permissionGranted = await requestDevicePermissions();
+
+        try {
+            let devices = await navigator.mediaDevices.enumerateDevices();
+
+            for (let dev of devices) {
+                // TODO: Setup output devices
+                if (dev.kind === 'audioinput') {
+                    let name = dev.label;
+
+                    // Give up if didn't get permission
+                    if (!permissionGranted) {
+                        break;
+                    }
+
+                    // Use the device id if the label is empty
+                    if (name.length === 0) {
+                        // deviceId should be default, communications, or some hash
+                        // Truncate, but not less than 'communications'
+                        name = dev.deviceId.substring(0, 'communications'.length);
+                    }
+
+                    let opt = createDeviceOption(`Browser - ${name}`, dev.deviceId, 'browser');
+                    elem.appendChild(opt);
+                }
+            }
+        } catch(e) {
+            console.warn(`Error fetching local devices: ${e}.`);
+            console.log(e);
+        }
     }
 
     if (settings.showHulaloopDevices) {
@@ -73,45 +115,6 @@ function updateDeviceList(elem, permissionAttempted = false) {
         devices.forEach((val) => {
             let opt = createDeviceOption(`HulaLoop - ${val}`, val, 'hulaloop');
             elem.appendChild(opt);
-        });
-    }
-
-    if (settings.showLocalDevices) {
-        navigator.mediaDevices.enumerateDevices()
-        .then((devices) => {
-
-            for (let dev of devices) {
-                // TODO: Setup output devices
-                if (dev.kind === 'audioinput') {
-                    let name = dev.label;
-                    if (name.length === 0) {
-
-                        if (!permissionAttempted) {
-                            // Request permission so that we can get proper device names
-                            navigator.mediaDevices.getUserMedia({ audio: true })
-                            .then(() => {
-                                updateDeviceList(elem, true);
-                            })
-                            .catch(() => {
-                                console.warn('Microphone permission denied.');
-                                updateDeviceList(elem, true);
-                            });
-
-                            return;
-                        }
-
-                        // deviceId should be default, communications, or some hash
-                        // Truncate, but not less than 'communications'
-                        name = dev.deviceId.substring(0, 14);
-                    }
-                    let opt = createDeviceOption(`Browser - ${name}`, dev.deviceId, 'browser');
-                    elem.appendChild(opt);
-                }
-            }
-        })
-        .catch((e) => {
-            console.warn(`Error fetching local devices: ${e}.`);
-            console.log(e);
         });
     }
 }
