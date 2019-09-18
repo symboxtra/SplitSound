@@ -24,7 +24,7 @@
     "webrtc-adapter": "^7.2.6"
   },
   "devDependencies": {
-    "cmake-js": "^5.3.0",
+    "cmake-js": "^5.3.2",
     "electron": "^5.0.6",
     "nan": "^2.14.0"
   },
@@ -33,7 +33,7 @@
   },
   "cmake-js": {
     "runtime": "electron",
-    "runtimeVersion": "5.0.1",
+    "runtimeVersion": "5.0.10",
     "arch": "x64"
   }
 }
