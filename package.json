@@ -4,7 +4,7 @@
   "description": "Audio sharing for mobile and desktop.",
   "main": "electron/main.js",
   "scripts": {
-    "start": "electron .",
+    "start": "cmake-js compile && electron .",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
