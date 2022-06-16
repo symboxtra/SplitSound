@@ -25,7 +25,7 @@
   },
   "devDependencies": {
     "cmake-js": "^5.3.2",
-    "electron": "^5.0.6",
+    "electron": "^15.5.5",
     "nan": "^2.14.0"
   },
   "nodemonConfig": {
